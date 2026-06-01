@@ -1,5 +1,5 @@
 // =============================================================
-// LEXIMED.AI — WhatsApp Agent v3.2 (Local API + Live Web Link)
+// LEXIMED.AI — WhatsApp Agent v3.2 (Production & Local Sync Optimized)
 // Aligned with LexiMed Web Platform (Laravel + React)
 //
 // Konsep sama dengan web:
@@ -22,11 +22,11 @@ const FormData               = require('form-data');
 // ── API Keys & Config ──────────────────────────────────────────
 const GROQ_API_KEY  = process.env.GROQ_API_KEY  || "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";
 
-// Mengikuti konfigurasi React Login: prioritas ke local backend Laravel port 8000
+// Prioritas ke local backend Laravel port 8000 sesuai dengan konfigurasi React Login
 const LARAVEL_API   = process.env.LARAVEL_API_URL || "http://localhost:8000/api";
 const LARAVEL_TOKEN = process.env.LARAVEL_API_TOKEN || ""; // Diisi via token Sanctum jika digunakan
 
-// URL Web Application Environment Resmi yang sudah ter-deploy di Vercel
+// URL Platform Aplikasi Web Resmi yang sudah ter-deploy di Vercel
 const WEB_PRODUCTION_URL = "https://leximedai-olivia2026-web-technology.vercel.app/";
 
 // Helper untuk menyisipkan pesan penutup dan link web di setiap akhir response AI
@@ -93,7 +93,7 @@ const PASIEN_DUMMY = [
             nadi: "88x/mnt",
             suhu: "37.8°C",
             spo2: "96%",
-            keluhan_awal: "Batuk produktif >3 minggu, dahak kekuningan, penurunan BB 6kg dalam 2 bulan, keringat malam."
+            keluhan_awal: "Batuk produktif >3 minggu, dahak kekuningan, penurunan BB 6kg dalam 2 butter, keringat malam."
         },
         alergi: "Penisilin",
         riwayat: "Mantan perokok aktif 20 tahun, berhenti 3 tahun lalu"
@@ -223,12 +223,12 @@ function resetSession(from) {
 }
 
 // =============================================================
-// TEKS INTERAKSI INTERFACES
+// TEKS INTERAKSI INTERFACES (MODIFIKASI LIVE REDIRECTION VERCEL)
 // =============================================================
 function msgWelcome() {
     return (
         `╔═══════════════════════════════╗\n` +
-        `║   🏥   LexiMed.ai  —  RS UNS   ║\n` +
+        `║   🏥   ${WEB_PRODUCTION_URL}   ║\n` +
         `║  Clinical AI Decision System  ║\n` +
         `╚═══════════════════════════════╝\n\n` +
         `Selamat datang! Silakan pilih role Anda:\n\n` +
@@ -440,20 +440,6 @@ async function analisisGambar(base64Data, mimeType, systemPrompt) {
     return res.data.choices[0].message.content;
 }
 
-function msgFallback(input) {
-    return (
-        `─── DRAFT ANALISIS LOKAL (Cloud AI Offline) ───\n\n` +
-        `Input: "${String(input).substring(0, 100)}"\n\n` +
-        `Rekomendasi umum:\n` +
-        `1. Lakukan stabilisasi TTV segera di IGD.\n` +
-        `2. Posisi semi-fowler jika ada sesak atau nyeri dada.\n` +
-        `3. Siapkan EKG dan akses IV line.\n` +
-        `4. Cek riwayat alergi sebelum pemberian obat.\n\n` +
-        `⚠️ Mode offline — draf ini bukan pengganti keputusan klinis.\n` +
-        `Ketik #menu untuk kembali`
-    );
-}
-
 // =============================================================
 // INITIALIZE WHATSAPP CLIENT RUNTIME
 // =============================================================
@@ -495,7 +481,7 @@ client.on('message', async (msg) => {
     }
     if (text === '#help') {
         return msg.reply(
-            `📖 PANDUAN SYSTEM INTERACTIVE LEXIMED.AI\n${'─'.repeat(30)}\n\n` +
+            `=== PANDUAN SYSTEM INTERACTIVE LEXIMED.AI ===\n\n` +
             `#menu   → Kembali ke menu utama role saat ini\n` +
             `#ganti  → Mengubah peran / role akses\n` +
             `#reset  → Mengosongkan session state dari awal\n` +
@@ -514,7 +500,6 @@ client.on('message', async (msg) => {
         session.step = 'menu_utama';
         const r = ROLES[text];
         
-        // Injeksi Pesan Interaktif Awal + Link Web Production Ter-deploy
         return msg.reply(
             `🌐 *${r.nama.toUpperCase()} AI NODE ACTIVATED*\n` +
             `${'─'.repeat(30)}\n\n` +
@@ -710,7 +695,6 @@ async function handleGambar(msg, session) {
         const r       = ROLES[session.role];
         const hasil   = await analisisGambar(media.data, media.mimetype, r.systemPrompt);
 
-        // Alokasikan log radiologi ke Laravel API Central Database
         const saved = await postClinicalDataToLaravel(
             'RAD-WA-' + Date.now(), 
             '[Media Ekstraksi: Lampiran Gambar Radiologi WhatsApp Gateway]',
