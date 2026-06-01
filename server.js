@@ -1,15 +1,9 @@
 // =============================================================
-// LEXIMED.AI — WhatsApp Agent v3.2 (Production & Local Sync Optimized)
+// LEXIMED.AI — WhatsApp Agent v3.3 (100% Live Local DB PostgreSQL)
 // Aligned with LexiMed Web Platform (Laravel + React)
 //
-// Konsep sama dengan web:
-//   - Role: dokter, perawat, radiologi, asisten_dokter, manajemen
-//   - Model: Patient (no_rm, title, name, age, gender, unit, dpjp)
-//   - Model: ClinicalData (blood_pressure, heart_rate, temperature,
-//             oxygen_saturation, raw_content, ai_summary, status)
-//   - Model: PemeriksaanAwal (tensi, nadi, suhu, spo2, keluhan_awal)
-//   - Flow: Input → AI Ekstraksi → Draf SOAP → Verifikasi
-//   - Source: whatsapp (sama seperti field 'source' di ClinicalData)
+// Flow: Input → Tarik Pasien Real DB → AI Ekstraksi → Post DB
+// Source: whatsapp (sama seperti field 'source' di ClinicalData)
 // =============================================================
 
 const { Client, LocalAuth } = require('whatsapp-web.js');
@@ -22,11 +16,11 @@ const FormData               = require('form-data');
 // ── API Keys & Config ──────────────────────────────────────────
 const GROQ_API_KEY  = process.env.GROQ_API_KEY  || "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";
 
-// Prioritas ke local backend Laravel port 8000 sesuai dengan konfigurasi React Login
+// Endpoint API sesuai dengan file .env backend Laravel lokal kamu
 const LARAVEL_API   = process.env.LARAVEL_API_URL || "http://localhost:8000/api";
-const LARAVEL_TOKEN = process.env.LARAVEL_API_TOKEN || ""; // Diisi via token Sanctum jika digunakan
+const LARAVEL_TOKEN = process.env.LARAVEL_API_TOKEN || ""; 
 
-// URL Platform Aplikasi Web Resmi yang sudah ter-deploy di Vercel
+// URL Web Application Production untuk Link Redirection di WhatsApp
 const WEB_PRODUCTION_URL = "https://leximedai-olivia2026-web-technology.vercel.app/";
 
 // Helper untuk menyisipkan pesan penutup dan link web di setiap akhir response AI
@@ -36,107 +30,6 @@ function appendWebLinkFooter() {
         `${WEB_PRODUCTION_URL}`
     );
 }
-
-// =============================================================
-// DATA PASIEN DUMMY — Struktur identik dengan Model Patient.php
-// =============================================================
-const PASIEN_DUMMY = [
-    {
-        no_rm: "RM-2024-0001",
-        title: "Tn",
-        name: "Budi Santoso",
-        age: 45,
-        gender: "Laki-Laki",
-        unit: "IGD",
-        dpjp: "dr. Hendra Sp.JP",
-        status_treatment: "Kritis",
-        pemeriksaan_awal: {
-            tensi: "160/100",
-            nadi: "102x/mnt",
-            suhu: "37.2°C",
-            spo2: "94%",
-            keluhan_awal: "Nyeri dada kiri menjalar ke lengan kiri, sesak napas mendadak sejak ±2 jam lalu. Riwayat hipertensi dan DM tipe 2."
-        },
-        alergi: "Aspirin",
-        riwayat: "Hipertensi 5 tahun, DM tipe 2"
-    },
-    {
-        no_rm: "RM-2024-0002",
-        title: "Ny",
-        name: "Siti Rahayu",
-        age: 32,
-        gender: "Perempuan",
-        unit: "Rawat Inap - Ruang Mawar",
-        dpjp: "dr. Amalia Sp.PD",
-        status_treatment: "Observasi",
-        pemeriksaan_awal: {
-            tensi: "110/70",
-            nadi: "98x/mnt",
-            suhu: "39.5°C",
-            spo2: "98%",
-            keluhan_awal: "Demam tinggi hari ke-3, muncul bintik merah di seluruh tubuh, mual muntah, nafsu makan turun."
-        },
-        alergi: "Tidak ada",
-        riwayat: "Tidak ada riwayat penyakit kronis"
-    },
-    {
-        no_rm: "RM-2024-0003",
-        title: "Tn",
-        name: "Ahmad Fauzi",
-        age: 58,
-        gender: "Laki-Laki",
-        unit: "Poli Paru",
-        dpjp: "dr. Suryo Sp.P",
-        status_treatment: "Rawat Jalan",
-        pemeriksaan_awal: {
-            tensi: "130/85",
-            nadi: "88x/mnt",
-            suhu: "37.8°C",
-            spo2: "96%",
-            keluhan_awal: "Batuk produktif >3 minggu, dahak kekuningan, penurunan BB 6kg dalam 2 butter, keringat malam."
-        },
-        alergi: "Penisilin",
-        riwayat: "Mantan perokok aktif 20 tahun, berhenti 3 tahun lalu"
-    },
-    {
-        no_rm: "RM-2024-0004",
-        title: "Nn",
-        name: "Dewi Kusuma",
-        age: 27,
-        gender: "Perempuan",
-        unit: "IGD",
-        dpjp: "dr. Rizki Sp.B",
-        status_treatment: "Observasi",
-        pemeriksaan_awal: {
-            tensi: "120/80",
-            nadi: "95x/mnt",
-            suhu: "38.1°C",
-            spo2: "99%",
-            keluhan_awal: "Nyeri perut kanan bawah mendadak sejak 6 jam lalu, mual tanpa muntah, tidak nafsu makan, nyeri menjalar ke pinggang kanan."
-        },
-        alergi: "Sulfa",
-        riwayat: "Tidak ada"
-    },
-    {
-        no_rm: "RM-2024-0005",
-        title: "Tn",
-        name: "Hendra Wijaya",
-        age: 65,
-        gender: "Laki-Laki",
-        unit: "ICU",
-        dpjp: "dr. Bambang Sp.JP",
-        status_treatment: "Kritis",
-        pemeriksaan_awal: {
-            tensi: "145/95",
-            nadi: "110x/mnt",
-            suhu: "36.9°C",
-            spo2: "91%",
-            keluhan_awal: "Sesak napas bertambah berat sejak 2 hari, kedua tungkai bengkak, mudah lelah saat aktivitas ringan, penurunan toleransi latihan."
-        },
-        alergi: "Ibuprofen",
-        riwayat: "CHF NYHA III, Hipertensi, Diabetes Melitus tipe 2"
-    }
-];
 
 // =============================================================
 // KONFIGURASI ROLE — Konsep CDSS Integrasi dengan User & Web
@@ -212,18 +105,19 @@ function getSession(from) {
         userSessions[from] = {
             step: 'welcome', 
             role: null,      
-            selectedPatient: null
+            selectedPatient: null,
+            fetchedPatients: [] // Menyimpan catch data pasien dari API lokal secara dinamis
         };
     }
     return userSessions[from];
 }
 
 function resetSession(from) {
-    userSessions[from] = { step: 'welcome', role: null, selectedPatient: null };
+    userSessions[from] = { step: 'welcome', role: null, selectedPatient: null, fetchedPatients: [] };
 }
 
 // =============================================================
-// TEKS INTERAKSI INTERFACES (MODIFIKASI LIVE REDIRECTION VERCEL)
+// TEKS INTERAKSI INTERFACES
 // =============================================================
 function msgWelcome() {
     return (
@@ -249,7 +143,7 @@ function msgMenuRole(roleKey) {
     menu += `Pilih aksi:\n\n`;
 
     if (r.bisaLihatPasien) {
-        menu += `1️⃣   📂   Lihat Daftar Pasien\n`;
+        menu += `1️⃣   📂   Lihat Daftar Pasien (Live DB)\n`;
         menu += `2️⃣   💬   Konsultasi / Input Klinis\n`;
         if (r.bisaAnalisisGambar) {
             menu += `3️⃣   🩻   Analisis Foto/Gambar Radiologi\n`;
@@ -263,100 +157,58 @@ function msgMenuRole(roleKey) {
     return menu;
 }
 
-function msgDaftarPasien() {
-    let txt = `📋 *DAFTAR PASIEN AKTIF*\n${'─'.repeat(32)}\n\n`;
-    PASIEN_DUMMY.forEach((p, i) => {
-        const statusIcon = p.status_treatment === 'Kritis' ? '🔴' : p.status_treatment === 'Observasi' ? '🟡' : '🟢';
-        txt += `*${i + 1}. ${p.title}. ${p.name}*\n`;
-        txt += `   🪪 ${p.no_rm}  ${statusIcon} ${p.status_treatment}\n`;
-        txt += `   📍 ${p.unit}  |  DPJP: ${p.dpjp}\n\n`;
-    });
-    txt += `Ketik nomor pasien untuk detail (contoh: *1*)`;
-    return txt;
-}
-
-function msgDetailPasien(p) {
-    const pa = p.pemeriksaan_awal;
-    return (
-        `📁 *REKAM MEDIS — ${p.title}. ${p.name}*\n${'─'.repeat(32)}\n` +
-        `🪪 No. RM  : ${p.no_rm}\n` +
-        `👤 Nama    : ${p.title}. ${p.name}\n` +
-        `🎂 Umur    : ${p.age} tahun  |  ${p.gender}\n` +
-        `🏥 Unit    : ${p.unit}\n` +
-        `👨‍⚕️ DPJP    : ${p.dpjp}\n` +
-        `📌 Status  : ${p.status_treatment}\n\n` +
-        `📊 *Pemeriksaan Awal (TTV):*\n` +
-        `   Tensi  : ${pa.tensi}\n` +
-        `   Nadi   : ${pa.nadi}\n` +
-        `   Suhu   : ${pa.suhu}\n` +
-        `   SpO2   : ${pa.spo2}\n\n` +
-        `🩺 *Keluhan Awal:*\n${pa.keluhan_awal}\n\n` +
-        `📋 *Riwayat:* ${p.riwayat}\n` +
-        `⚠️  *Alergi:* ${p.alergi}\n\n` +
-        `Pilih aksi:\n` +
-        `*A* — 🤖 Analisis AI (buat draf SOAP/NANDA)\n` +
-        `*B* — 📝 Ringkasan Rekam Medis\n` +
-        `*C* — 🔙 Kembali ke daftar pasien`
-    );
-}
-
 function buildKonteksKlinis(p) {
-    const pa = p.pemeriksaan_awal;
     return (
-        `DATA PASIEN (Source: whatsapp)\n` +
+        `DATA PASIEN (Source: DB rs_uns_db via whatsapp)\n` +
         `No. RM    : ${p.no_rm}\n` +
-        `Nama      : ${p.title}. ${p.name}, ${p.age} tahun, ${p.gender}\n` +
-        `Unit      : ${p.unit}\n` +
-        `DPJP      : ${p.dpjp}\n` +
-        `Status    : ${p.status_treatment}\n\n` +
-        `PEMERIKSAAN AWAL (PemeriksaanAwal):\n` +
-        `  Tensi    : ${pa.tensi}\n` +
-        `  Nadi     : ${pa.nadi}\n` +
-        `  Suhu     : ${pa.suhu}\n` +
-        `  SpO2     : ${pa.spo2}\n\n` +
-        `KELUHAN AWAL (raw_content):\n${pa.keluhan_awal}\n\n` +
-        `Riwayat Penyakit : ${p.riwayat}\n` +
-        `Alergi           : ${p.alergi}`
+        `Nama      : ${p.title || 'Tn/Ny'}. ${p.name}, ${p.age || '-'} tahun, ${p.gender || '-'}\n` +
+        `Unit      : ${p.unit || 'IGD'}\n` +
+        `DPJP      : ${p.dpjp || '-'}\n` +
+        `Status    : ${p.status_treatment || 'Observasi'}\n\n` +
+        `PEMERIKSAAN AWAL / VITAL SIGN:\n` +
+        `  Tensi    : ${p.blood_pressure || p.tensi || '-'}\n` +
+        `  Nadi     : ${p.heart_rate || p.nadi || '-'}\n` +
+        `  Suhu     : ${p.temperature || p.suhu || '-'}\n` +
+        `  SpO2     : ${p.oxygen_saturation || p.spo2 || '-'}\n\n` +
+        `KELUHAN UTAMA (raw_content):\n${p.keluhan_awal || p.raw_content || 'Tidak ada keluhan tertulis.'}\n\n` +
+        `Riwayat Penyakit : ${p.riwayat || '-'}\n` +
+        `Alergi           : ${p.alergi || '-'}`
     );
 }
 
 // =============================================================
-// LARAVEL CENTRAL BRIDGE PIPELINE
+// LIVE POST: KIRIM HASIL KE DATABASE POSTGRESQL (LARAVEL API)
 // =============================================================
-async function postClinicalDataToLaravel(patientId, rawContent, aiSummary, ttvData) {
-    if (!LARAVEL_TOKEN) return null; 
-
+async function postClinicalDataToLaravel(patientId, rawContent, aiSummary, patientObj) {
     try {
         const payload = {
             patient_id:        patientId,
-            blood_pressure:    ttvData.tensi || "-",
-            heart_rate:        ttvData.nadi || "-",
-            temperature:       ttvData.suhu || "-",
-            oxygen_saturation: ttvData.spo2 || "-",
+            blood_pressure:    patientObj.blood_pressure || patientObj.tensi || "-",
+            heart_rate:        patientObj.heart_rate || patientObj.nadi || "-",
+            temperature:       patientObj.temperature || patientObj.suhu || "-",
+            oxygen_saturation: patientObj.oxygen_saturation || patientObj.spo2 || "-",
             source:            'whatsapp',
-            raw_content:       rawContent,
+            raw_content:       rawContent || "Input via WhatsApp Gateway",
             ai_summary:        aiSummary,
             status:            'draft'   
         };
 
-        const res = await axios.post(`${LARAVEL_API}/clinical-data`, payload, {
-            headers: {
-                'Authorization': `Bearer ${LARAVEL_TOKEN}`,
-                'Content-Type': 'application/json',
-                'Accept': 'application/json'
-            },
+        const config = {
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
             timeout: 8000
-        });
+        };
+        if (LARAVEL_TOKEN) config.headers['Authorization'] = `Bearer ${LARAVEL_TOKEN}`;
 
+        const res = await axios.post(`${LARAVEL_API}/clinical-data`, payload, config);
         return res.data;
     } catch (e) {
-        console.error('[LARAVEL API BRIDGE ERROR]:', e.message);
+        console.error('[LARAVEL API POST ERROR]:', e.message);
         return null;
     }
 }
 
 // =============================================================
-// OMNI CORE ENGINE ENGINE (Llama 3.1 & Whisper & Llama Vision)
+// OMNI CORE AI CLUSTER (Groq AI API Engine)
 // =============================================================
 async function tanyaAI(systemPrompt, userContent) {
     const noMarkdown = ` PENTING: Jangan gunakan simbol markdown seperti bintang ganda (**), tagar (#), atau backtick. Hasilkan teks polos terstruktur yang rapi dan mudah dibaca di layar WhatsApp.`;
@@ -440,6 +292,20 @@ async function analisisGambar(base64Data, mimeType, systemPrompt) {
     return res.data.choices[0].message.content;
 }
 
+function msgFallback(input) {
+    return (
+        `─── DRAFT ANALISIS LOKAL (Cloud AI Offline) ───\n\n` +
+        `Input: "${String(input).substring(0, 100)}"\n\n` +
+        `Rekomendasi umum:\n` +
+        `1. Lakukan stabilisasi TTV segera di IGD.\n` +
+        `2. Posisi semi-fowler jika ada sesak atau nyeri dada.\n` +
+        `3. Siapkan EKG dan akses IV line.\n` +
+        `4. Cek riwayat alergi sebelum pemberian obat.\n\n` +
+        `⚠️ Mode offline — draf ini bukan pengganti keputusan klinis.\n` +
+        `Ketik #menu untuk kembali`
+    );
+}
+
 // =============================================================
 // INITIALIZE WHATSAPP CLIENT RUNTIME
 // =============================================================
@@ -449,7 +315,7 @@ const client = new Client({
 });
 
 client.on('qr', (qr) => {
-    console.log('\n══════════ LEXIMED.AI v3.2 — QR CORE INTERFACES ══════════');
+    console.log('\n══════════ LEXIMED.AI v3.3 — QR CORE INTERFACES ══════════');
     console.log('Buka tautan di bawah ini pada browser untuk menampilkan Barcode:');
     console.log(`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qr)}`);
     console.log('══════════════════════════════════════════════════════════\n');
@@ -457,7 +323,7 @@ client.on('qr', (qr) => {
 });
 
 client.on('ready', () => {
-    console.log('\n══> [ONLINE SUCCESS] LexiMed.ai v3.2 — Role Engine + Live Web Link Redirection Active! 🚀\n');
+    console.log('\n══> [ONLINE SUCCESS] LexiMed.ai v3.3 — Connect to PostgreSQL Local DB Active! 🚀\n');
 });
 
 // =============================================================
@@ -470,7 +336,7 @@ client.on('message', async (msg) => {
 
     try { const chat = await msg.getChat(); await chat.sendStateTyping(); } catch (_) {}
 
-    console.log(`[INCOMING] ${from.split('@')[0]} | step=${session.step} | role=${session.role} | type=${msg.type}`);
+    console.log(`[INCOMING] ${from.split('@')[0]} | step=${session.step} | role=${session.role}`);
 
     // ── Global Pipeline Command Control ──────────────────────
     if (text === '#reset') { resetSession(from); return msg.reply(msgWelcome()); }
@@ -486,10 +352,8 @@ client.on('message', async (msg) => {
             `#ganti  → Mengubah peran / role akses\n` +
             `#reset  → Mengosongkan session state dari awal\n` +
             `#help   → Menampilkan panduan sistem ini\n\n` +
-            `💡 FITUR AKSELERASI:\n` +
-            `• Kirim pesan suara (Voice Note) di mode konsultasi untuk translasi otomatis lewat Groq Whisper Engine.\n` +
-            `• Pada mode Radiologi, Anda bisa melampirkan berkas gambar rontgen/CT-Scan langsung untuk diekstraksi AI Vision.\n` +
-            `• Setiap draf yang diekstrak akan dialokasikan ke Web Cloud sebagai status 'draft' menunggu validasi dokter.`
+            `💡 FITUR LIVE DATABASE:\n` +
+            `• Angka 1 pada menu role akan langsung menembak API lokal Laravel untuk menarik data rekam medis pasien asli secara real-time dari PostgreSQL.`
         );
     }
 
@@ -517,15 +381,43 @@ client.on('message', async (msg) => {
         const r = ROLES[session.role];
 
         if (msg.type === 'ptt' || msg.type === 'audio') return handleVoice(msg, session);
-
         if (msg.type === 'image') {
             if (r.bisaAnalisisGambar) return handleGambar(msg, session);
             return msg.reply(`🖼️ Analisis gambar multimodal hanya diizinkan untuk unit *${ROLES['3'].nama}*.\nAnda saat ini terdaftar sebagai *${r.nama}*.`);
         }
 
+        // AKSI 1: NEMBAK DATA LIVE PATIENTS DARI LARAVEL LOCAL BACKEND
         if (text === '1' && r.bisaLihatPasien) {
-            session.step = 'pilih_pasien';
-            return msg.reply(msgDaftarPasien());
+            await msg.reply(`⏳ Menghubungkan ke PostgreSQL lokal via ${LARAVEL_API}/patients...`);
+            try {
+                const config = { headers: { 'Accept': 'application/json' }, timeout: 5000 };
+                if (LARAVEL_TOKEN) config.headers['Authorization'] = `Bearer ${LARAVEL_TOKEN}`;
+                
+                const response = await axios.get(`${LARAVEL_API}/patients`, config);
+                const patients = response.data.patients || response.data || [];
+
+                if (patients.length === 0) {
+                    return msg.reply(`⚠️ Database PostgreSQL terhubung, namun tidak ada data pasien aktif di tabel.\n\nKetik *#menu* untuk kembali.`);
+                }
+
+                session.fetchedPatients = patients; // Simpan cache data riil ke session state
+                session.step = 'pilih_pasien';
+
+                let txt = `📋 *DAFTAR PASIEN RIIL (rs_uns_db)*\n${'─'.repeat(32)}\n\n`;
+                patients.slice(0, 10).forEach((p, i) => {
+                    const st = p.status_treatment || 'Observasi';
+                    const icon = st === 'Kritis' ? '🔴' : st === 'Observasi' ? '🟡' : '🟢';
+                    txt += `*${i + 1}. ${p.title || 'Tn/Ny'}. ${p.name}*\n`;
+                    txt += `   🪪 RM: ${p.no_rm}  ${icon} ${st}\n`;
+                    txt += `   📍 Unit: ${p.unit || 'Umum'} | DPJP: ${p.dpjp || '-'}\n\n`;
+                });
+                txt += `Ketik nomor pasien untuk detail (contoh: *1*)`;
+                return msg.reply(txt);
+
+            } catch (err) {
+                console.error("Gagal fetch PostgreSQL:", err.message);
+                return msg.reply(`❌ Gagal menarik data dari DB Lokal Laravel.\n\nPastikan perintah *php artisan serve* aktif di port 8000.\n\nKetik *#menu* untuk kembali.`);
+            }
         }
 
         const konsultasiKey = (r.bisaLihatPasien ? '2' : '1');
@@ -555,38 +447,58 @@ client.on('message', async (msg) => {
     // ── STEP: PATIENT QUERY LIST ─────────────────────────────
     if (session.step === 'pilih_pasien') {
         const idx = parseInt(text) - 1;
-        if (!isNaN(idx) && PASIEN_DUMMY[idx]) {
-            session.selectedPatient = PASIEN_DUMMY[idx];
+        const p = session.fetchedPatients[idx];
+        if (!isNaN(idx) && p) {
+            session.selectedPatient = p;
             session.step = 'aksi_pasien';
-            return msg.reply(msgDetailPasien(PASIEN_DUMMY[idx]));
+
+            // Kompilasi visualisasi detail data riil dari PostgreSQL
+            return msg.reply(
+                `📁 *REKAM MEDIS PASIEN — ${p.title || 'Tn/Ny'}. ${p.name}*\n${'─'.repeat(32)}\n` +
+                `🪪 No. RM  : ${p.no_rm}\n` +
+                `👤 Nama    : ${p.name}\n` +
+                `🎂 Umur    : ${p.age || '-'} tahun | ${p.gender || '-'}\n` +
+                `🏥 Unit    : ${p.unit || 'IGD'}\n` +
+                `👨‍⚕️ DPJP    : ${p.dpjp || '-'}\n` +
+                `📌 Status  : ${p.status_treatment || 'Observasi'}\n\n` +
+                `📊 *Vital Sign (Pemeriksaan Awal):*\n` +
+                `   Tensi  : ${p.blood_pressure || p.tensi || '-'}\n` +
+                `   Nadi   : ${p.heart_rate || p.nadi || '-'}\n` +
+                `   Suhu   : ${p.temperature || p.suhu || '-'}\n` +
+                `   SpO2   : ${p.oxygen_saturation || p.spo2 || '-'}\n\n` +
+                `🩺 *Keluhan:* ${p.keluhan_awal || p.raw_content || '-'}\n\n` +
+                `Pilih aksi:\n` +
+                `*A* — 🤖 Analisis AI (Buat draf SOAP/NANDA)\n` +
+                `*B* — 📝 Ringkasan Rekam Medis (Kemenkes)\n` +
+                `*C* — 🔙 Kembali ke daftar pasien`
+            );
         }
-        return msg.reply(`⚠️ Indeks tidak terdaftar. Silakan pilih nomor 1 sampai ${PASIEN_DUMMY.length}.`);
+        return msg.reply(`⚠️ Pilihan salah. Ketik angka 1 sampai ${session.fetchedPatients.length}.`);
     }
 
     // ── STEP: ACTION PIPELINE (SOAP / REKAM MEDIS) ───────────
     if (session.step === 'aksi_pasien') {
         const p = session.selectedPatient;
         const r = ROLES[session.role];
-        if (!p) { session.step = 'pilih_pasien'; return msg.reply(msgDaftarPasien()); }
+        if (!p) { session.step = 'menu_utama'; return msg.reply(msgMenuRole(session.role)); }
 
-        // Opsi A — Ekstraksi AI Agent (SOAP/NANDA/NIC)
         if (text.toLowerCase() === 'a') {
-            await msg.reply(`⏳ Mengirim data klinis *${p.title}. ${p.name}* menuju Groq AI Cluster...`);
+            await msg.reply(`⏳ Membaca skema model PostgreSQL & mengekstrak data klinis...`);
             const konteks = buildKonteksKlinis(p);
             try {
                 const aiResult = await tanyaAI(r.systemPrompt, konteks);
-                const saved = await postClinicalDataToLaravel(p.no_rm, p.pemeriksaan_awal.keluhan_awal, aiResult, p.pemeriksaan_awal);
+                const saved = await postClinicalDataToLaravel(p.id || p.no_rm, p.keluhan_awal || p.raw_content, aiResult, p);
                 
                 const bridgeTxt = saved
-                    ? `\n\n✅ [INTEGRASI LIVE] Data berhasil disinkronkan ke local server backend (status: draft).`
+                    ? `\n\n✅ [INTEGRASI LIVE] Sukses menyuntikkan draf data menuju tabel clinical_data di rs_uns_db (PostgreSQL)!`
                     : ``;
 
                 session.step = 'menu_utama';
                 return msg.reply(
-                    `🤖 *ANALISIS CDSS AGENT — ${p.title}. ${p.name}* (${p.no_rm})\n` +
+                    `🤖 *ANALISIS CDSS AGENT PASIEN REAL — ${p.name}*\n` +
                     `${'─'.repeat(32)}\n\n${aiResult}\n\n${'─'.repeat(32)}` +
                     bridgeTxt +
-                    appendWebLinkFooter() +
+                    幕 + appendWebLinkFooter() +
                     `\n\nKetik *#menu* untuk ke dashboard.`
                 );
             } catch (e) {
@@ -594,47 +506,36 @@ client.on('message', async (msg) => {
             }
         }
 
-        // Opsi B — Kompilasi Ringkasan RME Kemenkes
         if (text.toLowerCase() === 'b') {
-            await msg.reply(`📝 Membuat ringkasan dokumen klinis terstruktur *${p.title}. ${p.name}*...`);
-            const prompt =
-                `Susun resume medis formal berpatokan pada regulasi SatuSehat RME Kemenkes RI berdasarkan resume data pasien berikut:\n\n` +
-                buildKonteksKlinis(p) +
-                `\n\nWajib memuat identitas komplit, riwayat anamnesis, pencatatan objektif vital sign, draf diagnosis kerja, serta intervensi lanjutan.`;
+            await msg.reply(`📝 Menyusun struktur berkas RME SatuSehat...`);
+            const prompt = `Susun resume medis formal berpatokan pada regulasi SatuSehat RME Kemenkes RI berdasarkan data riil database berikut:\n\n` + buildKonteksKlinis(p);
             try {
                 const hasil = await tanyaAI(r.systemPrompt, prompt);
                 session.step = 'menu_utama';
                 return msg.reply(
-                    `📋 *RESUME ELEKTRONIK REKAM MEDIS (RME)*\n` +
-                    `${p.title}. ${p.name} — ${p.no_rm}\n` +
+                    `📋 *RESUME ELEKTRONIK REKAM MEDIS (RME) REAL-DB*\n` +
+                    `${p.name} — ${p.no_rm}\n` +
                     `${'─'.repeat(32)}\n\n${hasil}\n\n${'─'.repeat(32)}` +
                     appendWebLinkFooter() +
                     `\n\nKetik *#menu* untuk ke dashboard.`
                 );
             } catch (e) {
-                return msg.reply(`❌ Kegagalan orkestrasi resume engine: ${e.message}`);
+                return msg.reply(`❌ Gagal kompilasi resume: ${e.message}`);
             }
         }
 
-        // Opsi C — Rollback List
         if (text.toLowerCase() === 'c') {
-            session.step = 'pilih_pasien';
-            session.selectedPatient = null;
-            return msg.reply(msgDaftarPasien());
+            session.step = 'menu_utama';
+            return msg.reply(msgMenuRole(session.role));
         }
 
-        return msg.reply(`Aksi tidak dikenali. Pilih:\n*A* untuk Analisis AI\n*B* untuk Resume Medis\n*C* untuk Kembali`);
+        return msg.reply(`Pilihan salah. Tekan:\n*A* untuk Analisis AI\n*B* untuk Resume Medis\n*C* untuk Batal`);
     }
 
     // ── STEP: OPEN CLINICAL CONSULTATION ──────────────────────
     if (session.step === 'konsultasi') {
         const r = ROLES[session.role];
-
         if (msg.type === 'ptt' || msg.type === 'audio') return handleVoice(msg, session);
-        if (msg.type === 'image') {
-            if (r.bisaAnalisisGambar) return handleGambar(msg, session);
-            return msg.reply(`Analisis citra visual terbatas pada modul penunjang Radiologi.`);
-        }
         if (!text) return;
 
         try {
@@ -653,7 +554,7 @@ client.on('message', async (msg) => {
     // ── STEP: DIAGNOSTIC IMAGING LISTENER ────────────────────
     if (session.step === 'tunggu_gambar') {
         if (msg.type === 'image') return handleGambar(msg, session);
-        return msg.reply(`Sistem mendeteksi kegagalan lampiran. Silakan upload gambar radiologi Anda atau ketik *#menu*.`);
+        return msg.reply(`Silakan lampirkan gambar radiologi Anda atau ketik *#menu*.`);
     }
 
     msg.reply(msgWelcome());
@@ -681,7 +582,7 @@ async function handleVoice(msg, session) {
         );
     } catch (e) {
         console.error('[SPEECH PROCESSING PIPELINE CRASH]:', e.message);
-        return msg.reply(`⚠️ Gagal memproses voice note: ${e.message}\n\nSilakan beralih ke input teks manual.`);
+        return msg.reply(`⚠️ Gagal memproses voice note: ${e.message}`);
     }
 }
 
@@ -695,25 +596,20 @@ async function handleGambar(msg, session) {
         const r       = ROLES[session.role];
         const hasil   = await analisisGambar(media.data, media.mimetype, r.systemPrompt);
 
-        const saved = await postClinicalDataToLaravel(
-            'RAD-WA-' + Date.now(), 
-            '[Media Ekstraksi: Lampiran Gambar Radiologi WhatsApp Gateway]',
-            hasil,
-            { tensi: '-', nadi: '-', suhu: '-', spo2: '-' }
-        );
-        const bridgeTxt = saved ? `\n\n✅ Laporan impresi radiologis sukses diposting ke database web (status: draft).` : '';
+        const saved = await postClinicalDataToLaravel('RAD-LIVE-' + Date.now(), '[Media Gambar Radiologi]', hasil, { tensi: '-', nadi: '-', suhu: '-', spo2: '-' });
+        const bridgeTxt = saved ? `\n\n✅ Laporan citra sukses disuntikkan ke database PostgreSQL local server!` : '';
 
         return msg.reply(
             `🩻 *DRAF LAPORAN EVALUASI RADIOLOGI AI*\n` +
             `${'─'.repeat(30)}\n\n${hasil}\n\n${'─'.repeat(30)}\n` +
-            `⚠️ *PERINGATAN AKADEMIK*: Hasil kompilasi ini bersifat draf rekomendasi asisten virtual dan wajib divalidasi oleh spesialis Dokter Sp.Rad.` +
+            `⚠️ *PERINGATAN AKADEMIK*: Hasil kompilasi ini wajib divalidasi oleh spesialis Dokter Sp.Rad.` +
             bridgeTxt +
             appendWebLinkFooter() +
             `\n\nKetik *#menu* untuk kembali.`
         );
     } catch (e) {
         console.error('[MULTIMODAL VISION CORE ERROR]:', e.message);
-        return msg.reply(`⚠️ Gagal menganalisis gambar: ${e.message}\n\nPastikan ekstensi file valid (PNG/JPG).`);
+        return msg.reply(`⚠️ Gagal menganalisis gambar: ${e.message}`);
     }
 }
 
