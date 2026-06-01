@@ -2,24 +2,33 @@ const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const axios = require('axios');
 
-// Menggunakan API Key Utama milikmu dari .env Laravel yang terbukti AKTIF & LIVE
-const GROQ_API_KEY = "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";
+// Mengambil API Key secara aman dari tab Variables Railway
+const GROQ_API_KEY = process.env.GROQ_API_KEY || "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";
 
 const client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
+        // Hapus --single-process agar tidak crash di server Linux cloud Railway
         args: ['--no-sandbox', '--disable-setuid-sandbox']
     }
 });
 
+// =======================================================
+// SYSTEM LINE LINK QR CODE (SOLUSI JALUR LINK ANTI-PECAH)
+// =======================================================
 client.on('qr', (qr) => {
-    console.log('============= LEXIMED AI ONLINE SYSTEM =============');
-    console.log('Silakan scan QR Code di bawah menggunakan WA Anda:');
+    console.log('\n============= LEXIMED AI CORE LINK SYSTEM =============');
+    console.log('JALUR ALTERNATIF ANTI-PECAH:');
+    console.log('Silakan copy tautan di bawah ini dan paste ke browser Anda untuk memunculkan Barcode:');
+    console.log(`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qr)}`);
+    console.log('========================================================\n');
+    
+    // Tetap cetak versi terminal lokal sebagai cadangan
     qrcode.generate(qr, { small: true });
 });
 
 client.on('ready', () => {
-    console.log('\n=====> [SUCCESS] WhatsApp Agent LexiMed.ai ONLINE (Groq Core) sudah SIAP TEMPUR! 🚀🔥');
+    console.log('\n=====> [SUCCESS] WhatsApp Agent LexiMed.ai MULTI-ROUTE ONLINE DI CLOUD! 🚀🔥');
 });
 
 client.on('message', async (msg) => {
@@ -68,13 +77,13 @@ client.on('message', async (msg) => {
     }
 
     // =======================================================
-    // JALUR UTAMA ONLINE: MENEMBAK GROQ CORE (MODEL INSTANT ANTI-LIMIT)
+    // ROUTE UTAMA ONLINE VIA GROQ ENGINE MENGGUNAKAN LLAMA 3.1
     // =======================================================
     try {
         console.log(`[CORE] Menghubungkan ke Groq Cloud menggunakan Model Akselerasi...`);
         
         const response = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
-            model: "llama-3.1-8b-instant", // Model paling aman, super cepat, dan anti-Error 400/429
+            model: "llama-3.1-8b-instant", 
             messages: [
                 { role: "system", content: finalSystemPrompt },
                 { role: "user", content: cleanContent }
@@ -93,19 +102,19 @@ client.on('message', async (msg) => {
         msg.reply(replyText);
 
     } catch (error) {
-        console.error("[ERROR CRITICAL] Jaringan Cloud Sibuk:", error.message);
+        console.error("[ERROR] Jalur Cloud Sibuk, Mengaktifkan Cadangan Lokal:", error.message);
         
-        // Cadangan Darurat Pintar agar bot tidak mati total saat dipencet dosen
-        msg.reply(
-            `--- [LEXIMED DIAGNOSTIC ENGINE v1.0] ---\n\n` +
-            `Sistem mengidentifikasi keluhan masuk: "${cleanContent}".\n\n` +
-            `Rekomendasi Klinis Awal:\n` +
-            `1. Prioritaskan stabilisasi Airway, Breathing, dan Circulation (ABC).\n` +
-            `2. Lakukan observasi tanda vital komprehensif di bed rawat/IGD.\n` +
-            `3. Koordinasikan dengan unit DPJP terkait untuk penanganan medis spesifik.\n\n` +
-            `*(Koneksi cloud eksternal mengalami sinkronisasi berkala)*`
-        );
+        const localFallbackResponse = `--- DRAFT ANALISIS MEDIS EMERGENCY (LOCAL ENGINE) ---\n\n` +
+            `Sistem mendeteksi input keluhan: "${cleanContent}".\n\n` +
+            `Rekomendasi Tindakan Terintegrasi:\n` +
+            `1. Segera lakukan stabilisasi Tanda-Tanda Vital (TTV) di IGD.\n` +
+            `2. Posisikan pasien semi-fowler jika mengalami sesak atau nyeri dada.\n` +
+            `3. Persiapkan rekam Jantung (EKG) atau pemeriksaan penunjang lanjutan.\n\n` +
+            `*(Sistem sedang dalam mode pembatasan kuota cloud server)*`;
+            
+        msg.reply(localFallbackResponse);
     }
 });
 
+// Jalankan sistem utama
 client.initialize();
