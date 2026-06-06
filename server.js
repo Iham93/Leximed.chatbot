@@ -1,5 +1,5 @@
 // =============================================================
-// LEXIMED.AI — WhatsApp Agent v3.9 (Full Cloud Interactive Infrastructure)
+// LEXIMED.AI — WhatsApp Agent v4.0 (Full Cloud Interactive Infrastructure)
 // Aligned with LexiMed Web Platform (Live Vercel Backend + Supabase)
 //
 // Flow: WA Input Credential → Validate via Live Vercel API /token → 
@@ -16,7 +16,7 @@ const FormData               = require('form-data');
 // ── API Keys & Cloud Configurations ─────────────────────────────
 const GROQ_API_KEY  = process.env.GROQ_API_KEY  || "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";
 
-// REVISI FIX: Menggunakan URL Live Backend Vercel milikmu secara default
+// Endpoint mengarah ke Production Vercel sesuai komponen Login.js React Anda
 const LARAVEL_API   = process.env.LARAVEL_API_URL || "https://lexi-med-ai-llm-rs-back-end.vercel.app/api";
 
 // URL Web Application Production resmi milik Anda yang terdeploy di Vercel
@@ -259,14 +259,14 @@ const client = new Client({
 });
 
 client.on('qr', (qr) => {
-    console.log('\n══════════ LEXIMED.AI v3.9 — QR CORE ══════════');
+    console.log('\n══════════ LEXIMED.AI v4.0 — QR CORE ══════════');
     console.log(`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qr)}`);
     console.log('═══════════════════════════════════════════════\n');
     qrcode.generate(qr, { small: true });
 });
 
 client.on('ready', () => {
-    console.log('\n══> [ONLINE SUCCESS] LexiMed.ai v3.9 — Fixed Vercel Cloud API Connected! 🚀\n');
+    console.log('\n══> [ONLINE SUCCESS] LexiMed.ai v4.0 — Fixed Cloud Token Sync Complete! 🚀\n');
 });
 
 // =============================================================
@@ -308,7 +308,7 @@ client.on('message', async (msg) => {
         return msg.reply(`🔑 Username tersimpan: *${text}*\n\nSilakan ketik *KATA SANDI / PASSWORD* akun Anda:`);
     }
 
-    // ── STEP 3: VERIFIKASI LIVE VIA ENDPOINT VERCEL BACKEND CLOUD ──
+    // ── STEP 3: FIX UTAMA - PENYESUAIAN MULTIPART FORM BOUNDARY DENGAN VERCEL PAYLOAD ──
     if (session.step === 'auth_password') {
         await msg.reply(`⏳ Menghubungkan kredensial ke database rs_uns_db (PostgreSQL Cloud)...`);
         try {
@@ -317,8 +317,11 @@ client.on('message', async (msg) => {
             form.append('password', text);
 
             const res = await axios.post(`${LARAVEL_API}/token`, form, {
-                headers: { ...form.getHeaders(), 'Accept': 'application/json' },
-                timeout: 10000
+                headers: { 
+                    ...form.getHeaders(), 
+                    'Accept': 'application/json' 
+                },
+                timeout: 12000
             });
 
             const data = res.data;
@@ -354,7 +357,7 @@ client.on('message', async (msg) => {
         } catch (err) {
             console.error('[API AUTH CORRUPTION]:', err.message);
             session.step = 'auth_username';
-            return msg.reply(`❌ Gagal terhubung ke Cloud Server Vercel.\n\nPastikan koneksi internet aktif dan backend Vercel merespon.\n\nKetik kembali *USERNAME* Anda:`);
+            return msg.reply(`❌ Verifikasi Gagal: Gagal sinkronisasi data kredensial.\n\nPastikan format teks besar/kecil sesuai dan web backend merespon.\n\nKetik kembali *USERNAME* Anda:`);
         }
     }
 
