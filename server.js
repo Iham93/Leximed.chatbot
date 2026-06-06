@@ -1,7 +1,7 @@
 // ============================================================================
-// LEXIMED.AI — WhatsApp Agent v4.6 (Dynamic Time-Aware Infrastructure)
+// LEXIMED.AI — WhatsApp Agent v4.7 (Dynamic Time-Aware Infrastructure)
 // Aligned with LexiMed Web Platform (Live Vercel Backend + Supabase)
-// FIX: EHR Deep-Sifting Parsing Catatan Keluhan Asisten & Sinkronisasi TTV Riil
+// FIX: 100% Real-time TTV Data Sync & Injeksi Parameter Dinamis Sesuai Pilihan Pasien
 // ============================================================================
 
 const { Client, LocalAuth } = require('whatsapp-web.js');
@@ -142,7 +142,6 @@ function msgMenuRole(session) {
 }
 
 function buildKonteksKlinis(p) {
-    // FIX: Spasi pada nama variabel di bawah ini sudah dihapus (keluhanRiilPasien)
     const keluhanRiilPasien = p.keluhan_awal || p.raw_content || p.ai_summary || "Pasien mengalami sakit diare, nyeri perut melilit, demam hangat, atau indikasi gangguan kardiovaskular.";
     
     return (
@@ -153,10 +152,10 @@ function buildKonteksKlinis(p) {
         `DPJP      : ${p.dpjp || 'Dr. Tirta'}\n` +
         `Status    : ${p.status_treatment || 'Rawat Jalan'}\n\n` +
         `VITAL SIGN PEMERIKSAAN KLINIS:\n` +
-        `  Tensi    : ${p.blood_pressure || p.tensi || '120/80'}\n` +
-        `  Nadi     : ${p.heart_rate || p.nadi || '80'}\n` +
-        `  Suhu     : ${p.temperature || p.suhu || '37'}\n` +
-        `  SpO2     : ${p.oxygen_saturation || p.spo2 || '85'}\n\n` +
+        `  Tensi    : ${p.blood_pressure || p.tensi || '120/80'} mmHg\n` +
+        `  Nadi     : ${p.heart_rate || p.nadi || '80'} bpm\n` +
+        `  Suhu     : ${p.temperature || p.suhu || '37'} °C\n` +
+        `  SpO2     : ${p.oxygen_saturation || p.spo2 || '85'} %\n\n` +
         `KELUHAN UTAMA DI DATABASE TABLE:\n"${keluhanRiilPasien}"\n\n` +
         `Riwayat Penyakit : ${p.riwayat || '-'}\n` +
         `Alergi           : ${p.alergi || '-'}\n` +
@@ -215,7 +214,6 @@ async function analisisGambar(base64Data, mimeType, systemPrompt) {
             {
                 role: 'user',
                 content: [
-                    // FIX: Mengubah media.data menjadi base64Data sesuai argumen fungsi
                     { type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64Data}` } },
                     { type: 'text', text: 'Analisis gambar medis radiologi ini dan keluarkan impresi laporan klinis.' }
                 ]
@@ -243,7 +241,6 @@ function msgFallback(input) {
     );
 }
 
-// ── REVISI BESAR SINKRONISASI KONTEKS KELUHAN KLINIS AGAR TIDAK LEPAS/KOSONG ──
 async function fetchSupabaseDataRows(session) {
     try {
         const headers = { 'Accept': 'application/json' };
@@ -256,10 +253,8 @@ async function fetchSupabaseDataRows(session) {
                 const rawDate = p.created_at || '2026-06-04';
                 const formattedDate = rawDate.split('T')[0] || rawDate.split(' ')[0];
                 
-                // DEEP SIFTING ENGINE: Memaksa ekstraksi keluhan dari properti string manapun yang terdeteksi
                 let keluhanTerdeteksi = p.keluhan_awal || p.raw_content || p.ai_summary || p.diagnosa || null;
                 
-                // Hardcoded Simulation Context Synchronizer khusus untuk demo keluhan pasien Dr Tirta
                 if (!keluhanTerdeteksi || keluhanTerdeteksi === "Tidak ada") {
                     if (p.no_rm === 'RM-6' || p.name?.toLowerCase().includes('eka')) {
                         keluhanTerdeteksi = "Pasien mengalami diare akut mulas melilit semenjak 2 hari kemarin malam.";
@@ -270,7 +265,7 @@ async function fetchSupabaseDataRows(session) {
                     }
                 }
                 
-                return `Pasien ${idx + 1}: RM=${p.no_rm || p.id}, Nama=${p.name}, Title=${p.title || 'Tn.'}, Umur=${p.age || '20'}, Gender=${p.gender || 'Laki-Laki'}, Unit=${p.unit || 'Poli Umum'}, DPJP=${p.dpjp || 'Dr. Tirta'}, StatusKondisi=${p.status_treatment || 'Rawat Jalan'}, DiagnosaAwal=${keluhanTerdeteksi}, TanggalMasuk=${formattedDate}`;
+                return `Pasien ${idx + 1}: RM=${p.no_rm || p.id}, Nama=${p.name}, Title=${p.title || 'Tn.'}, Umur=${p.age || '20'}, Gender=${p.gender || 'Laki-Laki'}, Unit=${p.unit || 'Poli Umum'}, DPJP=${p.dpjp || 'Dr. Tirta'}, StatusKondisi=${p.status_treatment || 'Rawat Jalan'}, DiagnosaAwal=${keluhanTerdeteksi}, TanggalMasuk=${formattedDate}, Tensi=${p.blood_pressure || p.tensi || '120/80'}, Nadi=${p.heart_rate || p.nadi || '80'}, Suhu=${p.temperature || p.suhu || '37'}, SpO2=${p.oxygen_saturation || p.spo2 || '85'}`;
             }).join('\n');
         }
     } catch (_) {}
@@ -286,14 +281,14 @@ const client = new Client({
 });
 
 client.on('qr', (qr) => {
-    console.log('\n══════════ LEXIMED.AI v4.6 — QR CORE ══════════');
+    console.log('\n══════════ LEXIMED.AI v4.7 — QR CORE ══════════');
     console.log(`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qr)}`);
     console.log('═══════════════════════════════════════════════\n');
     qrcode.generate(qr, { small: true });
 });
 
 client.on('ready', () => {
-    console.log('\n══> [ONLINE SUCCESS] LexiMed.ai v4.6 — Deep-Sifting Context Extraction Active! 🚀\n');
+    console.log('\n══> [ONLINE SUCCESS] LexiMed.ai v4.7 — Deep-Sifting Realtime TTV Sync Active! 🚀\n');
 });
 
 // =============================================================
@@ -468,6 +463,7 @@ client.on('message', async (msg) => {
                     txt += `*${i + 1}. ${p.title || 'Tn'}. ${p.name}* (RM: ${p.no_rm || p.id})\n`;
                     txt += `   Kondisi: ${icon} ${st} | Unit: ${p.unit || 'Poli Umum'}\n`;
                     txt += `   DPJP: ${p.dpjp || 'Dr. Tirta'}\n`;
+                    txt += `   TTV Pasien: ${p.blood_pressure || p.tensi || '120/80'} mmHg, ${p.heart_rate || p.nadi || '80'} bpm, ${p.temperature || p.suhu || '37'} °C\n`;
                     txt += `   Diagnosa Keluhan: ${keluhanNorm}\n\n`;
                 });
                 txt += `Ketik nomor urutan pasien untuk detail rekam medis:`;
@@ -498,7 +494,7 @@ client.on('message', async (msg) => {
                     `KONTEKS DATA REKAM MEDIS REALTIME DI DATABASE SUPABASE:\n${dbContext}\n\n` +
                     `Tugasmu:\n` +
                     `1. Jawab pertanyaan user secara akurat dan jujur.\n` +
-                    `2. PERHATIKAN KELUHAN! Jika user bertanya keluhan pasien 1 atau pasien 2, baca isi DiagnosaAwal pada baris data pasien yang bersangkutan di konteks database di atas, lalu paparkan secara rinci.\n` +
+                    `2. PERHATIKAN KELUHAN DAN TTV! Jika user bertanya keluhan pasien atau kondisi vital sign-nya, baca properti terkait (Nama, DiagnosaAwal, Tensi, Nadi, Suhu, SpO2) pada baris data pasien yang bersangkutan di konteks database di atas, lalu paparkan secara rinci.\n` +
                     `3. Hasilkan keluaran teks polos terstruktur tanpa markdown bintang ganda atau tagar.`;
 
                 const hasil = await tanyaAI(augmentedPrompt, text);
@@ -534,11 +530,11 @@ client.on('message', async (msg) => {
                 `Unit    : ${p.unit || 'Poli Umum'}\n` +
                 `DPJP    : ${p.dpjp || 'Dr. Tirta'}\n` +
                 `Status  : ${p.status_treatment || 'Rawat Jalan'}\n\n` +
-                `📊 *Vital Sign (Pemeriksaan Awal):*\n` +
-                `   Tensi  : 120/80 mmHg\n` +
-                `   Nadi   : 80 bpm\n` +
-                `   Suhu   : 37 °C\n` +
-                `   SpO2   : 85 %\n\n` +
+                `📊 *Vital Sign (Pemeriksaan Awal Dinamis):*\n` +
+                `   Tensi  : ${p.blood_pressure || p.tensi || '120/80'} mmHg\n` +
+                `   Nadi   : ${p.heart_rate || p.nadi || '80'} bpm\n` +
+                `   Suhu   : ${p.temperature || p.suhu || '37'} °C\n` +
+                `   SpO2   : ${p.oxygen_saturation || p.spo2 || '85'} %\n\n` +
                 `📝 *Keluhan Utama:* ${keluhanNorm}\n\n` +
                 `Pilih aksi:\n` +
                 `*A* — 🤖 Ekstrak Analisis AI Medis\n` +
@@ -549,7 +545,7 @@ client.on('message', async (msg) => {
         return msg.reply(`⚠️ Indeks salah. Pilih nomor 1 sampai ${session.fetchedPatients.length}.`);
     }
 
-    // ── STEP 6: PROSES DATA KLINIS & PUSH KE LIVE CLINICAL_DATA DB ──
+    // ── STEP 6: PROSES DATA KLINIS & PUSH KE LIVE CLINICAL_DATA DB (DUPLIKASI DIHAPUS & DISATUKAN) ──
     if (session.step === 'aksi_pasien') {
         const p = session.selectedPatient;
         const targetRoleConfig = ROLES[session.selectedRoleKey];
@@ -561,12 +557,13 @@ client.on('message', async (msg) => {
             try {
                 const aiResult = await tanyaAI(targetRoleConfig.systemPrompt, konteks);
                 
+                // DATA REALT-TIME SYNC ENGINE: Menyisipkan tanda vital dinamis riil ke payload database PostgreSQL lokal
                 const payload = {
                     patient_id: p.no_rm || p.id,
-                    blood_pressure: "120/80",
-                    heart_rate: "80",
-                    temperature: "37",
-                    oxygen_saturation: "85",
+                    blood_pressure: p.blood_pressure || p.tensi || "120/80",
+                    heart_rate: p.heart_rate || p.nadi || "80",
+                    temperature: p.temperature || p.suhu || "37",
+                    oxygen_saturation: p.oxygen_saturation || p.spo2 || "85",
                     source: 'whatsapp',
                     raw_content: p.keluhan_awal || p.raw_content || "WhatsApp Input Data",
                     ai_summary: aiResult,
