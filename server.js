@@ -1,15 +1,9 @@
 // =============================================================
-// LEXIMED.AI — WhatsApp Agent v3.8 (Unified Interactive Infrastructure)
-// Aligned with LexiMed Web Platform (Laravel + React Login Control)
+// LEXIMED.AI — WhatsApp Agent v3.9 (Full Cloud Interactive Infrastructure)
+// Aligned with LexiMed Web Platform (Live Vercel Backend + Supabase)
 //
-// Flow: WA Input Credential → Validate via Laravel API /token → 
-//       Lock Role Session Token → Live Fetch/Post PostgreSQL (rs_uns_db)
-// Features: 
-//   - Interactive Welcome Box Dashboard with Real Vercel Production Link
-//   - Automated Role Selection Handling
-//   - Dynamic Live Credential Verification via Laravel Local API (/token)
-//   - Full Role Access Management (Including New 'Admin' Role Configuration)
-//   - 100% Live Fetch & Post with PostgreSQL Local Database (rs_uns_db)
+// Flow: WA Input Credential → Validate via Live Vercel API /token → 
+//       Lock Role Session Token → Live Fetch/Post Supabase Cloud DB
 // =============================================================
 
 const { Client, LocalAuth } = require('whatsapp-web.js');
@@ -19,11 +13,11 @@ const fs                     = require('fs');
 const path                   = require('path');
 const FormData               = require('form-data');
 
-// ── API Keys & Config ──────────────────────────────────────────
+// ── API Keys & Cloud Configurations ─────────────────────────────
 const GROQ_API_KEY  = process.env.GROQ_API_KEY  || "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";
 
-// API Base URL mengarah ke port 8000 lokal sesuai dengan konfigurasi file React Login Anda
-const LARAVEL_API   = process.env.LARAVEL_API_URL || "http://127.0.0.1:8000/api";
+// REVISI FIX: Menggunakan URL Live Backend Vercel milikmu secara default
+const LARAVEL_API   = process.env.LARAVEL_API_URL || "https://lexi-med-ai-llm-rs-back-end.vercel.app/api";
 
 // URL Web Application Production resmi milik Anda yang terdeploy di Vercel
 const WEB_PRODUCTION_URL = "https://leximedai-olivia2026-web-technology.vercel.app/";
@@ -38,7 +32,6 @@ const DATABASE_CONTEXT_SCHEMA = `
 - TABLE public.executive_reports: id, topic, summary_content, status, created_by
 `;
 
-// Helper Footer tautan terintegrasi
 function appendWebLinkFooter() {
     return (
         `\n\n🌐 Buka Web Platform untuk verifikasi & kelola data:\n` +
@@ -145,7 +138,6 @@ function msgMenuRole(session) {
     menu += `${'─'.repeat(32)}\n\n`;
     menu += `Pilih menu aksi:\n\n`;
 
-    // Fitur Kontrol Akses Berdasarkan Role
     if (session.roleKode !== 'manajemen') {
         menu += `1️⃣   📂   Lihat Daftar Pasien (Live Supabase)\n`;
         menu += `2️⃣   💬   Contextual Tanya AI / Konsultasi Bebas\n`;
@@ -267,14 +259,14 @@ const client = new Client({
 });
 
 client.on('qr', (qr) => {
-    console.log('\n══════════ LEXIMED.AI v3.8 — QR CORE ══════════');
+    console.log('\n══════════ LEXIMED.AI v3.9 — QR CORE ══════════');
     console.log(`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qr)}`);
     console.log('═══════════════════════════════════════════════\n');
     qrcode.generate(qr, { small: true });
 });
 
 client.on('ready', () => {
-    console.log('\n══> [ONLINE SUCCESS] LexiMed.ai v3.8 — Fixed API Destination Active! 🚀\n');
+    console.log('\n══> [ONLINE SUCCESS] LexiMed.ai v3.9 — Fixed Vercel Cloud API Connected! 🚀\n');
 });
 
 // =============================================================
@@ -287,7 +279,6 @@ client.on('message', async (msg) => {
 
     try { const chat = await msg.getChat(); await chat.sendStateTyping(); } catch (_) {}
 
-    // Global Command Control Management
     if (text === '#logout' || text === '#reset') { resetSession(from); return msg.reply(msgWelcome()); }
     if (text === '#menu' && session.roleKode) { session.step = 'menu_utama'; return msg.reply(msgMenuRole(session)); }
 
@@ -297,7 +288,6 @@ client.on('message', async (msg) => {
         session.selectedRoleKey = text;
         session.step = 'auth_username';
         
-        // Pengecekan otomatis untuk menampilkan contoh kredensial seeder lokal sesuai tombol yang dipilih
         let exampleUser = `ilham_${ROLES[text].kode}`;
         if (ROLES[text].kode === 'asisten') exampleUser = "ilham_asisten";
         if (ROLES[text].kode === 'admin') exampleUser = "admin_darsi";
@@ -318,9 +308,9 @@ client.on('message', async (msg) => {
         return msg.reply(`🔑 Username tersimpan: *${text}*\n\nSilakan ketik *KATA SANDI / PASSWORD* akun Anda:`);
     }
 
-    // ── STEP 3: POST TOKEN VERIFICATION KE BACKEND LARAVEL LOKAL DB POSTGRESQL ──
+    // ── STEP 3: VERIFIKASI LIVE VIA ENDPOINT VERCEL BACKEND CLOUD ──
     if (session.step === 'auth_password') {
-        await msg.reply(`⏳ Menghubungkan kredensial ke database rs_uns_db (PostgreSQL)...`);
+        await msg.reply(`⏳ Menghubungkan kredensial ke database rs_uns_db (PostgreSQL Cloud)...`);
         try {
             const form = new FormData();
             form.append('username', session.username);
@@ -328,7 +318,7 @@ client.on('message', async (msg) => {
 
             const res = await axios.post(`${LARAVEL_API}/token`, form, {
                 headers: { ...form.getHeaders(), 'Accept': 'application/json' },
-                timeout: 7000
+                timeout: 10000
             });
 
             const data = res.data;
@@ -337,13 +327,11 @@ client.on('message', async (msg) => {
                 return msg.reply(`❌ Verifikasi Gagal: Kata sandi atau Username salah.\n\nSilakan ketik ulang *USERNAME* Anda:`);
             }
 
-            // Normalisasi penamaan role dari Laravel Sanctum Payload
             let fetchedRole = data.user.role ? data.user.role.toLowerCase() : '';
             if (fetchedRole === 'asisten_dokter') fetchedRole = 'asisten';
 
             const expectedRole = ROLES[session.selectedRoleKey].kode;
 
-            // Validasi cross-check role pilihan dengan data record asli DB
             if (fetchedRole !== expectedRole) {
                 session.step = 'auth_username';
                 return msg.reply(
@@ -354,7 +342,6 @@ client.on('message', async (msg) => {
                 );
             }
 
-            // Kunci kredensial dinamis ke session state runtime
             session.token              = data.access_token || '';
             session.roleKode           = fetchedRole;
             session.userRealName       = data.user.name || session.username;
@@ -367,7 +354,7 @@ client.on('message', async (msg) => {
         } catch (err) {
             console.error('[API AUTH CORRUPTION]:', err.message);
             session.step = 'auth_username';
-            return msg.reply(`❌ Gagal terhubung ke Local Server Backend.\n\nPastikan backend server port 8000 menyala (*php artisan serve*).\n\nKetik kembali *USERNAME* Anda:`);
+            return msg.reply(`❌ Gagal terhubung ke Cloud Server Vercel.\n\nPastikan koneksi internet aktif dan backend Vercel merespon.\n\nKetik kembali *USERNAME* Anda:`);
         }
     }
 
@@ -381,16 +368,13 @@ client.on('message', async (msg) => {
             return msg.reply(`🖼️ Fitur ekstraksi Vision dikunci untuk selain tim Radiologi.`);
         }
 
-        // REVISI ENDPOINT FIX: Menembak route asli /patients-list bawaan controller Laravel-mu
         if (text === '1' && session.roleKode !== 'manajemen') {
-            await msg.reply(`⏳ Menarik data pasien riil dari PostgreSQL via API Local...`);
+            await msg.reply(`⏳ Menarik data pasien riil dari PostgreSQL via API Cloud Vercel...`);
             try {
                 const headers = { 'Accept': 'application/json' };
                 if (session.token) headers['Authorization'] = `Bearer ${session.token}`;
 
-                const response = await axios.get(`${LARAVEL_API}/patients-list`, { headers, timeout: 8000 });
-                
-                // Normalisasi pembacaan wrapper data dari Laravel array payload
+                const response = await axios.get(`${LARAVEL_API}/patients-list`, { headers, timeout: 10000 });
                 const patients = response.data.patients || response.data.data || response.data || [];
 
                 if (patients.length === 0) {
@@ -417,7 +401,7 @@ client.on('message', async (msg) => {
 
             } catch (err) {
                 console.error('[FETCH PATIENTS ERROR]:', err.message);
-                return msg.reply(`❌ Jalur API local terputus. Pastikan backend server aktif.\n\nKetik *#menu* untuk kembali.`);
+                return msg.reply(`❌ Jalur API Cloud Vercel terputus. Pastikan deployment aktif.\n\nKetik *#menu* untuk kembali.`);
             }
         }
 
@@ -478,7 +462,6 @@ client.on('message', async (msg) => {
             try {
                 const aiResult = await tanyaAI(targetRoleConfig.systemPrompt, konteks);
                 
-                // Post hasil AI otomatis ke tabel clinical_data di PostgreSQL lokal
                 const payload = {
                     patient_id: p.no_rm || p.id,
                     blood_pressure: p.blood_pressure || p.tensi || "-",
@@ -493,7 +476,7 @@ client.on('message', async (msg) => {
 
                 const headers = { 'Content-Type': 'application/json', 'Accept': 'application/json' };
                 if (session.token) headers['Authorization'] = `Bearer ${session.token}`;
-                await axios.post(`${LARAVEL_API}/clinical-data`, payload, { headers, timeout: 8000 });
+                await axios.post(`${LARAVEL_API}/clinical-data`, payload, { headers, timeout: 10000 });
 
                 session.step = 'menu_utama';
                 return msg.reply(
