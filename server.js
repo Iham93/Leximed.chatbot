@@ -1,9 +1,11 @@
 // =============================================================
-// LEXIMED.AI — WhatsApp Agent v4.0 (Full Cloud Interactive Infrastructure)
+// LEXIMED.AI — WhatsApp Agent v4.2 (Context-Aware Omni Infrastructure)
 // Aligned with LexiMed Web Platform (Live Vercel Backend + Supabase)
 //
-// Flow: WA Input Credential → Validate via Live Vercel API /token → 
-//       Lock Role Session Token → Live Fetch/Post Supabase Cloud DB
+// System Flow: 
+//   1. Authority Verification -> Directly mapped to Vercel /token endpoint
+//   2. Dynamic State Backtrack -> Added 'kembali' control step on login phase
+//   3. Natural Language Gateway -> Live Database rows context auto-injected
 // =============================================================
 
 const { Client, LocalAuth } = require('whatsapp-web.js');
@@ -15,21 +17,16 @@ const FormData               = require('form-data');
 
 // ── API Keys & Cloud Configurations ─────────────────────────────
 const GROQ_API_KEY  = process.env.GROQ_API_KEY  || "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";
-
-// Endpoint mengarah ke Production Vercel sesuai komponen Login.js React Anda
 const LARAVEL_API   = process.env.LARAVEL_API_URL || "https://lexi-med-ai-llm-rs-back-end.vercel.app/api";
-
-// URL Web Application Production resmi milik Anda yang terdeploy di Vercel
 const WEB_PRODUCTION_URL = "https://leximedai-olivia2026-web-technology.vercel.app/";
 
-// Raw Metadata Skema Database public.* untuk Injeksi Contextual Text-to-SQL AI
+// Raw Metadata Skema Database public.* untuk Injeksi Contextual AI
 const DATABASE_CONTEXT_SCHEMA = `
 - TABLE public.users: id, name, username, role, specialization, unit, status
 - TABLE public.patients: no_rm (PK), title, name, age, gender, unit, dpjp, status_treatment
 - TABLE public.pemeriksaan_awals: id, patient_id (FK to patients.no_rm), tensi, nadi, suhu, spo2, keluhan_awal, source
 - TABLE public.clinical_data: id, patient_id, source, raw_content, ai_summary, status, blood_pressure, heart_rate, temperature, oxygen_saturation
 - TABLE public.radiology_reports: id, patient_id, modality, raw_findings, ai_result, status, radiologist
-- TABLE public.executive_reports: id, topic, summary_content, status, created_by
 `;
 
 function appendWebLinkFooter() {
@@ -139,17 +136,13 @@ function msgMenuRole(session) {
     menu += `Pilih menu aksi:\n\n`;
 
     if (session.roleKode !== 'manajemen') {
-        menu += `1️⃣   📂   Lihat Daftar Pasien (Live Supabase)\n`;
-        menu += `2️⃣   💬   Contextual Tanya AI / Konsultasi Bebas\n`;
-        if (session.roleKode === 'radiologi') {
-            menu += `3️⃣   🩻   Analisis Foto/Gambar Radiologi\n`;
-        }
-    } else {
-        menu += `1️⃣   💬   Input Data & Analisis Eksekutif Rumah Sakit\n`;
+        menu += `1️⃣   📂   Lihat Daftar Pasien (Live Supabase)\n\n`;
     }
-
-    menu += `\n🎙️   *Voice note* → otomatis ditranskrip oleh Whisper\n`;
-    menu += `\nKetik *#logout* untuk keluar dari akun`;
+    
+    menu += `💬 *INTELLIGENT BOT GENERATION AKTIF*\n`;
+    menu += `Anda bisa langsung mengetik pertanyaan bebas atau instruksi klinis apa saja di bawah ini tanpa perlu menekan nomor peran lagi.\n`;
+    menu += `🎙️ Pesan suara (Voice Note) otomatis diproses oleh Whisper.\n\n`;
+    menu += `Ketik *#logout* untuk keluar dari akun`;
     return menu;
 }
 
@@ -243,11 +236,26 @@ function msgFallback(input) {
         `Input: "${String(input).substring(0, 100)}"\n\n` +
         `Rekomendasi umum:\n` +
         `1. Lakukan stabilisasi TTV segera di IGD.\n` +
-        `2. Posisi semi-fowler jika ada sesak atau nyeri dada.\n` +
-        `3. Siapkan EKG dan akses IV line.\n\n` +
+        `2. Posisi semi-fowler jika ada sesak atau nyeri dada.\n\n` +
         `⚠️ Mode offline — draf ini bukan pengganti keputusan klinis.\n` +
         `Ketik #menu untuk kembali`
     );
+}
+
+// Helper cerdas penarik rekaman data pasien dari Supabase untuk disuapkan ke AI
+async function fetchSupabaseDataRows(session) {
+    try {
+        const headers = { 'Accept': 'application/json' };
+        if (session.token) headers['Authorization'] = `Bearer ${session.token}`;
+        const res = await axios.get(`${LARAVEL_API}/patients-list`, { headers, timeout: 8000 });
+        const data = res.data.patients || res.data.data || res.data || [];
+        if (data.length > 0) {
+            return data.map((p, idx) => 
+                `Pasien ${idx + 1}: RM=${p.no_rm || p.id}, Nama=${p.name}, Title=${p.title || 'Tn/Ny'}, Umur=${p.age}, Gender=${p.gender}, Unit=${p.unit || 'IGD'}, DPJP=${p.dpjp || '-'}, StatusKondisi=${p.status_treatment || 'Observasi'}, DiagnosaAwal=${p.keluhan_awal || p.raw_content || 'Tidak ada'}`
+            ).join('\n');
+        }
+    } catch (_) {}
+    return "TIDAK ADA REKAMAN DATA PASIEN AKTIF DI TABEL DATABASE.";
 }
 
 // =============================================================
@@ -259,14 +267,14 @@ const client = new Client({
 });
 
 client.on('qr', (qr) => {
-    console.log('\n══════════ LEXIMED.AI v4.0 — QR CORE ══════════');
+    console.log('\n══════════ LEXIMED.AI v4.2 — QR CORE ══════════');
     console.log(`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qr)}`);
     console.log('═══════════════════════════════════════════════\n');
     qrcode.generate(qr, { small: true });
 });
 
 client.on('ready', () => {
-    console.log('\n══> [ONLINE SUCCESS] LexiMed.ai v4.0 — Fixed Cloud Token Sync Complete! 🚀\n');
+    console.log('\n══> [ONLINE SUCCESS] LexiMed.ai v4.2 — Contextual Query Infrastructure Loaded! 🚀\n');
 });
 
 // =============================================================
@@ -305,11 +313,23 @@ client.on('message', async (msg) => {
         if (!text) return msg.reply(`Username tidak boleh kosong.`);
         session.username = text;
         session.step = 'auth_password';
-        return msg.reply(`🔑 Username tersimpan: *${text}*\n\nSilakan ketik *KATA SANDI / PASSWORD* akun Anda:`);
+        
+        // REVISI OPTION: Memberikan informasi opsi ketik 'kembali' pada antarmuka teks WA
+        return msg.reply(
+            `🔑 Username tersimpan: *${text}*\n\n` +
+            `Silakan ketik *KATA SANDI / PASSWORD* akun Anda:\n` +
+            `_(Atau ketik *kembali* jika ingin mengubah username)_`
+        );
     }
 
-    // ── STEP 3: FIX UTAMA - PENYESUAIAN MULTIPART FORM BOUNDARY DENGAN VERCEL PAYLOAD ──
+    // ── STEP 3: VERIFIKASI LIVE VIA ENDPOINT VERCEL BACKEND CLOUD DENGAN OPSI KEMBALI ──
     if (session.step === 'auth_password') {
+        // FITUR KEMBALI: Mengecek jika user mengetik keyword 'kembali'
+        if (text.toLowerCase() === 'kembali') {
+            session.step = 'auth_username';
+            return msg.reply(`🔙 Berhasil kembali ke halaman sebelumnya. Silakan ketik ulang *USERNAME* Anda:`);
+        }
+
         await msg.reply(`⏳ Menghubungkan kredensial ke database rs_uns_db (PostgreSQL Cloud)...`);
         try {
             const form = new FormData();
@@ -317,10 +337,7 @@ client.on('message', async (msg) => {
             form.append('password', text);
 
             const res = await axios.post(`${LARAVEL_API}/token`, form, {
-                headers: { 
-                    ...form.getHeaders(), 
-                    'Accept': 'application/json' 
-                },
+                headers: { ...form.getHeaders(), 'Accept': 'application/json' },
                 timeout: 12000
             });
 
@@ -365,12 +382,29 @@ client.on('message', async (msg) => {
     if (session.step === 'menu_utama') {
         const targetRoleConfig = ROLES[session.selectedRoleKey];
 
-        if (msg.type === 'ptt' || msg.type === 'audio') return handleVoice(msg, session);
+        // INTERCEPT INPUT AUDIO/VOICE NOTE DI MENU UTAMA -> LANGSUNG PROSES WHISPER + ANALISIS DATA REAL
+        if (msg.type === 'ptt' || msg.type === 'audio') {
+            await msg.reply(`🎙️ Membuka dokumen pesan suara via Groq Whisper v3...`);
+            try {
+                const media     = await msg.downloadMedia();
+                const transkrip = await transkripVoice(media.data, media.mimetype);
+                await msg.reply(`📝 *Hasil Transkripsi Suara:* "${transkrip}"\n\nMencari relasi data klinis...`);
+                
+                const dbContext = await fetchSupabaseDataRows(session);
+                const combinedPrompt = `USER REALNAME: ${session.userRealName}\nUNIT: ${session.userUnit}\nROLE: ${targetRoleConfig.nama}\n\nDATA PASIEN AKTIF SUPABASE:\n${dbContext}\n\nJawab transkripsi suara user secara terstruktur polos tanpa simbol markdown.`;
+                const aiRes = await tanyaAI(combinedPrompt, transkrip);
+                return msg.reply(`🤖 *RESPONS INSTAN AGENT (VOICE — LIVE CLOUD)*\n${'─'.repeat(30)}\n\n${aiRes}\n\n${'─'.repeat(30)}` + appendWebLinkFooter());
+            } catch (err) {
+                return msg.reply(`⚠️ Gagal mengenali enkripsi audio: ${err.message}`);
+            }
+        }
+
         if (msg.type === 'image') {
             if (session.roleKode === 'radiologi') return handleGambar(msg, session);
             return msg.reply(`🖼️ Fitur ekstraksi Vision dikunci untuk selain tim Radiologi.`);
         }
 
+        // AKSI MENU 1: LIHAT DAFTAR MANUAL
         if (text === '1' && session.roleKode !== 'manajemen') {
             await msg.reply(`⏳ Menarik data pasien riil dari PostgreSQL via API Cloud Vercel...`);
             try {
@@ -403,23 +437,36 @@ client.on('message', async (msg) => {
                 return msg.reply(txt);
 
             } catch (err) {
-                console.error('[FETCH PATIENTS ERROR]:', err.message);
-                return msg.reply(`❌ Jalur API Cloud Vercel terputus. Pastikan deployment aktif.\n\nKetik *#menu* untuk kembali.`);
+                return msg.reply(`❌ Jalur API Cloud Vercel terputus. Pastikan deployment aktif.`);
             }
         }
 
-        const konsultasiKey = (session.roleKode !== 'manajemen' ? '2' : '1');
-        if (text === konsultasiKey) {
-            session.step = 'konsultasi';
-            return msg.reply(`💬 *KONSULTASI INTERAKTIF & TANYA AI BEBAS (${session.roleKode.toUpperCase()})*\n\nSistem AI saat ini telah mengenali Anda sebagai *${session.userRealName}* di unit *${session.userUnit}*.\nAnda bisa menanyakan data pasien secara bebas tanpa perlu mengetik nama Anda sendiri.\n\nKetik *#menu* untuk kembali.`);
-        }
+        // FIX SAKTI UTAMA: JIKA DIKETIK PESAN TEKS BEBAS LANGSUNG DI MENU UTAMA -> JALANKAN TEXT-TO-INFORMATION REALTIME DB
+        if (text && text !== '1') {
+            await msg.reply(`🔍 Mengekstrak konteks database online untuk Akun *${session.userRealName}*...`);
+            try {
+                const dbContext = await fetchSupabaseDataRows(session);
+                
+                const augmentedPrompt = 
+                    `INFORMASI OTORISASI REKAM MEDIS:\n` +
+                    `- User yang sedang bertanya: ${session.userRealName}\n` +
+                    `- Username akun: ${session.username}\n` +
+                    `- Unit kerja user: ${session.userUnit}\n` +
+                    `- Otoritas Peran Medis: ${targetRoleConfig.nama}\n\n` +
+                    `KONTEKS DATA REKAM MEDIS REALTIME DI DATABASE SUPABASE:\n${dbContext}\n\n` +
+                    `SKEMA STRUKTUR DATABASE:\n${DATABASE_CONTEXT_SCHEMA}\n\n` +
+                    `Tugasmu: Jawab pertanyaan user secara akurat, spesifik, and hitung jumlah baris data di atas jika ditanya kuantitas (misal: total pasien hari ini). Hasilkan keluaran berupa teks polos terstruktur yang rapi bagi tenaga medis rumah sakit tanpa simbol markdown bintang ganda atau tagar.`;
 
-        if (text === '3' && session.roleKode === 'radiologi') {
-            session.step = 'tunggu_gambar';
-            return msg.reply(`🩻 *DIVISI RADIOLOGI IMAGING SELECTION*\n\nSilakan lampirkan gambar rontgen/CT-Scan.\n\nKetik *#menu* untuk batal.`);
+                const hasil = await tanyaAI(augmentedPrompt, text);
+                return msg.reply(
+                    `🤖 *RESPONS INSTAN AGENT (${session.roleKode.toUpperCase()} — LIVE CLOUD)*\n` +
+                    `${'─'.repeat(30)}\n\n${hasil}\n\n${'─'.repeat(30)}` +
+                    appendWebLinkFooter()
+                );
+            } catch (e) {
+                return msg.reply(msgFallback(text));
+            }
         }
-
-        return msg.reply(msgMenuRole(session));
     }
 
     // ── STEP 5: TAMPILAN DETAIL REKAM MEDIS REAL PASIEN ───────
@@ -443,7 +490,7 @@ client.on('message', async (msg) => {
                 `   Nadi   : ${p.heart_rate || p.nadi || '-'}\n` +
                 `   Suhu   : ${p.temperature || p.suhu || '-'}\n` +
                 `   SpO2   : ${p.oxygen_saturation || p.spo2 || '-'}\n\n` +
-                `🩺 *Keluhan:* ${p.keluhan_awal || p.raw_content || '-'}\n\n` +
+                `%🩺 *Keluhan:* ${p.keluhan_awal || p.raw_content || '-'}\n\n` +
                 `Pilih aksi:\n` +
                 `*A* — 🤖 Ekstrak Analisis AI Medis\n` +
                 `*B* — 📝 Buat Ringkasan RME Kemenkes\n` +
@@ -517,35 +564,6 @@ client.on('message', async (msg) => {
         return msg.reply(`Ketik opsi A, B, atau C.`);
     }
 
-    // ── STEP: KONSULTASI INTERAKTIF / VOICE ──────────────────
-    if (session.step === 'konsultasi') {
-        const targetRoleConfig = ROLES[session.selectedRoleKey];
-        if (msg.type === 'ptt' || msg.type === 'audio') return handleVoice(msg, session);
-        if (!text) return;
-
-        await msg.reply(`🔍 Mengekstrak konteks database online untuk Akun *${session.userRealName}*...`);
-
-        const augmentedPrompt = 
-            `INFORMASI OTORISASI REKAM MEDIS:\n` +
-            `- User yang sedang bertanya: ${session.userRealName}\n` +
-            `- Username akun: ${session.username}\n` +
-            `- Unit kerja user: ${session.userUnit}\n` +
-            `- Otoritas Peran Medis: ${targetRoleConfig.nama}\n\n` +
-            `KONTEKS SKEMA REKAM MEDIS RUMAH SAKIT UNS:\n${DATABASE_CONTEXT_SCHEMA}\n\n` +
-            `Tugasmu: Jawab pertanyaan user dengan memposisikan dirimu mengetahui data di atas. Jangan buat query SQL mentah di chat, berikan jawaban teks polos terstruktur yang natural dan ramah bagi tenaga medis rumah sakit.`;
-
-        try {
-            const hasil = await tanyaAI(augmentedPrompt, text);
-            return msg.reply(
-                `🤖 *RESPONS INSTAN AGENT (${session.roleKode.toUpperCase()} — CLOUD AI)*\n` +
-                `${'─'.repeat(30)}\n\n${hasil}\n\n${'─'.repeat(30)}` +
-                appendWebLinkFooter() + `\n\nKetik *#menu* untuk kembali.`
-            );
-        } catch (e) {
-            return msg.reply(msgFallback(text));
-        }
-    }
-
     // ── STEP: TUNGGU LAMPIRAN CITRA RADIOLOGI ────────────────
     if (session.step === 'tunggu_gambar') {
         if (msg.type === 'image') return handleGambar(msg, session);
@@ -556,31 +574,7 @@ client.on('message', async (msg) => {
 });
 
 // =============================================================
-// HANDLER AUDIO PIPELINE WHISPER TRANSCRIPTION
-// =============================================================
-async function handleVoice(msg, session) {
-    await msg.reply(`🎙 ... Membuka dokumen pesan suara via Groq Whisper v3 ...`);
-    try {
-        const media     = await msg.downloadMedia();
-        const transkrip = await transkripVoice(media.data, media.mimetype);
-
-        await msg.reply(`📝 *Hasil Transkripsi:* "${transkrip}"\n\nMeneruskan menuju AI Core Engine...`);
-
-        const targetRoleConfig = ROLES[session.selectedRoleKey];
-        const hasil = await tanyaAI(targetRoleConfig.systemPrompt, transkrip);
-
-        return msg.reply(
-            `🤖 *Kompilasi Medis via Voice Suara — ${session.roleKode.toUpperCase()}*\n` +
-            `${'─'.repeat(30)}\n\n${hasil}\n\n${'─'.repeat(30)}` +
-            appendWebLinkFooter() + `\n\nKetik *#menu* untuk kembali.`
-        );
-    } catch (e) {
-        return msg.reply(`⚠️ Gagal memproses enkripsi audio: ${e.message}`);
-    }
-}
-
-// =============================================================
-// HANDLER VISUAL IMMAGING LLAMA VISION EXTRACTOR
+// SUB-ROUTINE HANDLER: VISUAL IMAGING LLAMA VISION EXTRACTOR
 // =============================================================
 async function handleGambar(msg, session) {
     await msg.reply(`🩻 Citra rontgen diterima. Memproses analisis multimodal...`);
