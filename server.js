@@ -1,11 +1,11 @@
 // =============================================================
-// LEXIMED.AI — WhatsApp Agent v4.3 (Context-Aware Omni Infrastructure)
+// LEXIMED.AI — WhatsApp Agent v4.5 (Dynamic Time-Aware Infrastructure)
 // Aligned with LexiMed Web Platform (Live Vercel Backend + Supabase)
 //
 // System Flow: 
 //   1. Authority Verification -> Directly mapped to Vercel /token endpoint
 //   2. Dynamic State Backtrack -> Fully intercepted 'kembali' on all auth stages
-//   3. Natural Language Gateway -> Live Database rows context auto-injected
+//   3. Auto Date-Constraint -> System tracks real-time calendar dates dynamically
 // =============================================================
 
 const { Client, LocalAuth } = require('whatsapp-web.js');
@@ -23,10 +23,9 @@ const WEB_PRODUCTION_URL = "https://leximedai-olivia2026-web-technology.vercel.a
 // Raw Metadata Skema Database public.* untuk Injeksi Contextual AI
 const DATABASE_CONTEXT_SCHEMA = `
 - TABLE public.users: id, name, username, role, specialization, unit, status
-- TABLE public.patients: no_rm (PK), title, name, age, gender, unit, dpjp, status_treatment
-- TABLE public.pemeriksaan_awals: id, patient_id (FK to patients.no_rm), tensi, nadi, suhu, spo2, keluhan_awal, source
-- TABLE public.clinical_data: id, patient_id, source, raw_content, ai_summary, status, blood_pressure, heart_rate, temperature, oxygen_saturation
-- TABLE public.radiology_reports: id, patient_id, modality, raw_findings, ai_result, status, radiologist
+- TABLE public.patients: no_rm (PK), title, name, age, gender, unit, dpjp, status_treatment, created_at, updated_at
+- TABLE public.pemeriksaan_awals: id, patient_id (FK to patients.no_rm), tensi, nadi, suhu, spo2, keluhan_awal, source, created_at, updated_at
+- TABLE public.clinical_data: id, patient_id, source, raw_content, ai_summary, status, blood_pressure, heart_rate, temperature, oxygen_saturation, created_at, updated_at
 `;
 
 function appendWebLinkFooter() {
@@ -44,13 +43,13 @@ const ROLES = {
         kode: 'dokter',
         nama: 'Dokter Spesialis',
         icon: '👨‍⚕️',
-        systemPrompt: `Kamu adalah Clinical Decision Support System (CDSS) LexiMed.ai milik RS UNS. Analisis data klinis yang diberikan dokter, susun draf assessment medis dalam format SOAP (Subjective, Objective, Assessment, Plan), tentukan tingkat kegawatdaruratan (skala 1-5 ESI), dan berikan rekomendasi tindakan medis.`
+        systemPrompt: `Kamu adalah Clinical Decision Support System (CDSS) LexiMed.ai milik RS UNS. Analisis data klinis yang diberikan dokter, susun draf assessment medis dalam format SOAP (Subjective, Objective, Assessment, Plan), tentukan tingkat kegawatdaruratan (skala 1-5 ESI), and berikan rekomendasi tindakan medis.`
     },
     '2': {
         kode: 'perawat',
         nama: 'Perawat Klinis',
         icon: '👩‍⚕️',
-        systemPrompt: `Kamu adalah AI Perawat LexiMed.ai RS UNS. Ekstrak data TTV (Tensi, Nadi, Suhu, SpO2) dari narasi bebas perawat, identifikasi masalah keperawatan prioritas menggunakan format NANDA, dan susun intervensi keperawatan NIC yang tepat.`
+        systemPrompt: `Kamu adalah AI Perawat LexiMed.ai RS UNS. Ekstrak data TTV (Tensi, Nadi, Suhu, SpO2) dari narasi bebas perawat, identifikasi masalah keperawatan prioritas menggunakan format NANDA, and susun intervensi keperawatan NIC yang tepat.`
     },
     '3': {
         kode: 'radiologi',
@@ -161,7 +160,8 @@ function buildKonteksKlinis(p) {
         `  SpO2     : ${p.oxygen_saturation || p.spo2 || '-'}\n\n` +
         `KELUHAN UTAMA DI DATABASE TABLE:\n${p.keluhan_awal || p.raw_content || 'Tidak ada keluhan tertulis.'}\n\n` +
         `Riwayat Penyakit : ${p.riwayat || '-'}\n` +
-        `Alergi           : ${p.alergi || '-'}`
+        `Alergi           : ${p.alergi || '-'}\n` +
+        `Tanggal Masuk    : ${p.created_at || '-'}`
     );
 }
 
@@ -250,9 +250,12 @@ async function fetchSupabaseDataRows(session) {
         const res = await axios.get(`${LARAVEL_API}/patients-list`, { headers, timeout: 8000 });
         const data = res.data.patients || res.data.data || res.data || [];
         if (data.length > 0) {
-            return data.map((p, idx) => 
-                `Pasien ${idx + 1}: RM=${p.no_rm || p.id}, Nama=${p.name}, Title=${p.title || 'Tn/Ny'}, Umur=${p.age}, Gender=${p.gender}, Unit=${p.unit || 'IGD'}, DPJP=${p.dpjp || '-'}, StatusKondisi=${p.status_treatment || 'Observasi'}, DiagnosaAwal=${p.keluhan_awal || p.raw_content || 'Tidak ada'}`
-            ).join('\n');
+            return data.map((p, idx) => {
+                // Normalisasi string tanggal dari YYYY-MM-DD HH:MM:SS menjadi YYYY-MM-DD polos
+                const rawDate = p.created_at || '2026-06-01';
+                const formattedDate = rawDate.split(' ')[0] || rawDate;
+                return `Pasien ${idx + 1}: RM=${p.no_rm || p.id}, Nama=${p.name}, Title=${p.title || 'Tn/Ny'}, Umur=${p.age}, Gender=${p.gender}, Unit=${p.unit || 'IGD'}, DPJP=${p.dpjp || '-'}, StatusKondisi=${p.status_treatment || 'Observasi'}, DiagnosaAwal=${p.keluhan_awal || p.raw_content || 'Tidak ada'}, TanggalMasuk=${formattedDate}`;
+            }).join('\n');
         }
     } catch (_) {}
     return "TIDAK ADA REKAMAN DATA PASIEN AKTIF DI TABEL DATABASE.";
@@ -267,14 +270,14 @@ const client = new Client({
 });
 
 client.on('qr', (qr) => {
-    console.log('\n══════════ LEXIMED.AI v4.3 — QR CORE ══════════');
+    console.log('\n══════════ LEXIMED.AI v4.5 — QR CORE ══════════');
     console.log(`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qr)}`);
     console.log('═══════════════════════════════════════════════\n');
     qrcode.generate(qr, { small: true });
 });
 
 client.on('ready', () => {
-    console.log('\n══> [ONLINE SUCCESS] LexiMed.ai v4.3 — Navigation Guard Fixed! 🚀\n');
+    console.log('\n══> [ONLINE SUCCESS] LexiMed.ai v4.5 — Dynamic Real-Time Date Tracking Active! 🚀\n');
 });
 
 // =============================================================
@@ -328,7 +331,7 @@ client.on('message', async (msg) => {
         );
     }
 
-    // ── STEP 3: VERIFIKASI LIVE VIA ENDPOINT VERCEL BACKEND CLOUD DENGAN OPSI KEMBALI ──
+    // ── STEP 3: VERIFIKASI LIVE VIA VERCEL BACKEND CLOUD DENGAN OPSI KEMBALI ──
     if (session.step === 'auth_password') {
         if (text.toLowerCase() === 'kembali') {
             session.step = 'auth_username';
@@ -387,6 +390,7 @@ client.on('message', async (msg) => {
     if (session.step === 'menu_utama') {
         const targetRoleConfig = ROLES[session.selectedRoleKey];
 
+        // LOGIKA PENERIMA VOICE NOTE DI MENU UTAMA
         if (msg.type === 'ptt' || msg.type === 'audio') {
             await msg.reply(`🎙️ Membuka dokumen pesan suara via Groq Whisper v3...`);
             try {
@@ -394,8 +398,15 @@ client.on('message', async (msg) => {
                 const transkrip = await transkripVoice(media.data, media.mimetype);
                 await msg.reply(`📝 *Hasil Transkripsi Suara:* "${transkrip}"\n\nMencari relasi data klinis...`);
                 
+                // Kalkulasi Waktu Lokal untuk Injeksi Dinamis ke Whisper Engine
+                const targetZoneDate = new Date(new Date().toLocaleString("en-US", {timeZone: "Asia/Jakarta"}));
+                const year = targetZoneDate.getFullYear();
+                const month = String(targetZoneDate.getMonth() + 1).padStart(2, '0');
+                const day = String(targetZoneDate.getDate()).padStart(2, '0');
+                const dynamicTodayString = `${year}-${month}-${day}`;
+
                 const dbContext = await fetchSupabaseDataRows(session);
-                const combinedPrompt = `USER REALNAME: ${session.userRealName}\nUNIT: ${session.userUnit}\nROLE: ${targetRoleConfig.nama}\n\nDATA PASIEN AKTIF SUPABASE:\n${dbContext}\n\nJawab transkripsi suara user secara terstruktur polos tanpa simbol markdown.`;
+                const combinedPrompt = `USER REALNAME: ${session.userRealName}\nUNIT: ${session.userUnit}\nROLE: ${targetRoleConfig.nama}\nTANGGAL HARI INI SECARA REAL-TIME: ${dynamicTodayString}\n\nDATA PASIEN AKTIF SUPABASE:\n${dbContext}\n\nJawab transkripsi suara user secara terstruktur polos tanpa simbol markdown. Perhatikan batasan tanggal hari ini secara ketat.`;
                 const aiRes = await tanyaAI(combinedPrompt, transkrip);
                 return msg.reply(`🤖 *RESPONS INSTAN AGENT (VOICE — LIVE CLOUD)*\n${'─'.repeat(30)}\n\n${aiRes}\n\n${'─'.repeat(30)}` + appendWebLinkFooter());
             } catch (err) {
@@ -444,20 +455,33 @@ client.on('message', async (msg) => {
             }
         }
 
+        // FIX SAKTI UTAMA: PROSES INPUT TEXT BEBAS SECARA TIME-AWARE REGIN REAL-TIME
         if (text && text !== '1') {
             await msg.reply(`🔍 Mengekstrak konteks database online untuk Akun *${session.userRealName}*...`);
             try {
                 const dbContext = await fetchSupabaseDataRows(session);
                 
+                // KALKULASI PARSING TANGGAL DINAMIS HARI INI SECARA REAL-TIME (Zona Waktu Asia/Jakarta)
+                const targetZoneDate = new Date(new Date().toLocaleString("en-US", {timeZone: "Asia/Jakarta"}));
+                const year = targetZoneDate.getFullYear();
+                const month = String(targetZoneDate.getMonth() + 1).padStart(2, '0');
+                const day = String(targetZoneDate.getDate()).padStart(2, '0');
+                const dynamicTodayString = `${year}-${month}-${day}`; // Menghasilkan format YYYY-MM-DD dinamis
+
                 const augmentedPrompt = 
                     `INFORMASI OTORISASI REKAM MEDIS:\n` +
                     `- User yang sedang bertanya: ${session.userRealName}\n` +
                     `- Username akun: ${session.username}\n` +
                     `- Unit kerja user: ${session.userUnit}\n` +
-                    `- Otoritas Peran Medis: ${targetRoleConfig.nama}\n\n` +
+                    `- Otoritas Peran Medis: ${targetRoleConfig.nama}\n` +
+                    `- TANGGAL HARI INI SECARA REAL-TIME KORIDOR SISTEM: ${dynamicTodayString}\n\n` + // <--- SUNTIKAN TANGGAL OTOMATIS
                     `KONTEKS DATA REKAM MEDIS REALTIME DI DATABASE SUPABASE:\n${dbContext}\n\n` +
                     `SKEMA STRUKTUR DATABASE:\n${DATABASE_CONTEXT_SCHEMA}\n\n` +
-                    `Tugasmu: Jawab pertanyaan user secara akurat, spesifik, and hitung jumlah baris data di atas jika ditanya kuantitas (misal: total pasien hari ini). Hasilkan keluaran berupa teks polos terstruktur yang rapi bagi tenaga medis rumah sakit tanpa simbol markdown bintang ganda atau tagar.`;
+                    `Tugasmu:\n` +
+                    `1. Jawab pertanyaan user secara akurat, jujur, dan patuhi batasan kalender dinamis.\n` +
+                    `2. PERHATIKAN TANGGAL! Jika user bertanya tentang jumlah pasien "hari ini" atau "hari ini berapa pasien", bandingkan dengan string TANGGAL HARI INI (${dynamicTodayString}) terhadap properti TanggalMasuk pada baris data pasien di atas.\n` +
+                    `3. Jika di dalam data di atas tidak ada satu pun pasien yang memiliki nilai TanggalMasuk yang sama persis dengan tanggal hari ini (${dynamicTodayString}), maka katakan secara tegas dan jujur bahwa antrean pasien untuk hari ini masih kosong (0 pasien), sesuai dengan visualisasi dashboard web.\n` +
+                    `4. Jangan berhalusinasi menganggap data pasien bertanggal lampau sebagai pasien hari ini. Hasilkan keluaran teks polos tanpa simbol markdown bintang ganda atau tagar.`;
 
                 const hasil = await tanyaAI(augmentedPrompt, text);
                 return msg.reply(
