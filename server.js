@@ -1,10 +1,10 @@
 // =============================================================
-// LEXIMED.AI — WhatsApp Agent v4.2 (Context-Aware Omni Infrastructure)
+// LEXIMED.AI — WhatsApp Agent v4.3 (Context-Aware Omni Infrastructure)
 // Aligned with LexiMed Web Platform (Live Vercel Backend + Supabase)
 //
 // System Flow: 
 //   1. Authority Verification -> Directly mapped to Vercel /token endpoint
-//   2. Dynamic State Backtrack -> Added 'kembali' control step on login phase
+//   2. Dynamic State Backtrack -> Fully intercepted 'kembali' on all auth stages
 //   3. Natural Language Gateway -> Live Database rows context auto-injected
 // =============================================================
 
@@ -236,13 +236,13 @@ function msgFallback(input) {
         `Input: "${String(input).substring(0, 100)}"\n\n` +
         `Rekomendasi umum:\n` +
         `1. Lakukan stabilisasi TTV segera di IGD.\n` +
-        `2. Posisi semi-fowler jika ada sesak atau nyeri dada.\n\n` +
+        `2. Posisi semi-fowler jika ada sesak atau nyeri dada.\n` +
+        `3. Siapkan EKG dan akses IV line.\n\n` +
         `⚠️ Mode offline — draf ini bukan pengganti keputusan klinis.\n` +
         `Ketik #menu untuk kembali`
     );
 }
 
-// Helper cerdas penarik rekaman data pasien dari Supabase untuk disuapkan ke AI
 async function fetchSupabaseDataRows(session) {
     try {
         const headers = { 'Accept': 'application/json' };
@@ -267,14 +267,14 @@ const client = new Client({
 });
 
 client.on('qr', (qr) => {
-    console.log('\n══════════ LEXIMED.AI v4.2 — QR CORE ══════════');
+    console.log('\n══════════ LEXIMED.AI v4.3 — QR CORE ══════════');
     console.log(`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qr)}`);
     console.log('═══════════════════════════════════════════════\n');
     qrcode.generate(qr, { small: true });
 });
 
 client.on('ready', () => {
-    console.log('\n══> [ONLINE SUCCESS] LexiMed.ai v4.2 — Contextual Query Infrastructure Loaded! 🚀\n');
+    console.log('\n══> [ONLINE SUCCESS] LexiMed.ai v4.3 — Navigation Guard Fixed! 🚀\n');
 });
 
 // =============================================================
@@ -304,30 +304,35 @@ client.on('message', async (msg) => {
             `🔐 *GERBANG OTORISASI PERAN: ${ROLES[text].nama.toUpperCase()}*\n` +
             `${'─'.repeat(30)}\n\n` +
             `Untuk menjaga keamanan rekam medis elektronik RS UNS, silakan ketik *USERNAME* akun Anda:\n\n` +
-            `_(Contoh akun terdaftar: ${exampleUser})_`
+            `_(Contoh akun terdaftar: ${exampleUser})_\n\n` +
+            `👉 Ketik *kembali* untuk memilih ulang Peran/Role.`
         );
     }
 
     // ── STEP 2: VERIFIKASI USERNAME ──────────────────────────
     if (session.step === 'auth_username') {
         if (!text) return msg.reply(`Username tidak boleh kosong.`);
+        
+        if (text.toLowerCase() === 'kembali' || text === '#menu' || text === '#reset') {
+            resetSession(from);
+            return msg.reply(msgWelcome());
+        }
+
         session.username = text;
         session.step = 'auth_password';
         
-        // REVISI OPTION: Memberikan informasi opsi ketik 'kembali' pada antarmuka teks WA
         return msg.reply(
             `🔑 Username tersimpan: *${text}*\n\n` +
-            `Silakan ketik *KATA SANDI / PASSWORD* akun Anda:\n` +
-            `_(Atau ketik *kembali* jika ingin mengubah username)_`
+            `Silakan ketik *KATA SANDI / PASSWORD* akun Anda:\n\n` +
+            `👉 Ketik *kembali* jika ingin mengubah atau memperbaiki username Anda.`
         );
     }
 
     // ── STEP 3: VERIFIKASI LIVE VIA ENDPOINT VERCEL BACKEND CLOUD DENGAN OPSI KEMBALI ──
     if (session.step === 'auth_password') {
-        // FITUR KEMBALI: Mengecek jika user mengetik keyword 'kembali'
         if (text.toLowerCase() === 'kembali') {
             session.step = 'auth_username';
-            return msg.reply(`🔙 Berhasil kembali ke halaman sebelumnya. Silakan ketik ulang *USERNAME* Anda:`);
+            return msg.reply(`🔙 Berhasil kembali ke langkah sebelumnya.\n\nSilakan ketik kembali *USERNAME* Anda yang benar:`);
         }
 
         await msg.reply(`⏳ Menghubungkan kredensial ke database rs_uns_db (PostgreSQL Cloud)...`);
@@ -382,7 +387,6 @@ client.on('message', async (msg) => {
     if (session.step === 'menu_utama') {
         const targetRoleConfig = ROLES[session.selectedRoleKey];
 
-        // INTERCEPT INPUT AUDIO/VOICE NOTE DI MENU UTAMA -> LANGSUNG PROSES WHISPER + ANALISIS DATA REAL
         if (msg.type === 'ptt' || msg.type === 'audio') {
             await msg.reply(`🎙️ Membuka dokumen pesan suara via Groq Whisper v3...`);
             try {
@@ -404,7 +408,6 @@ client.on('message', async (msg) => {
             return msg.reply(`🖼️ Fitur ekstraksi Vision dikunci untuk selain tim Radiologi.`);
         }
 
-        // AKSI MENU 1: LIHAT DAFTAR MANUAL
         if (text === '1' && session.roleKode !== 'manajemen') {
             await msg.reply(`⏳ Menarik data pasien riil dari PostgreSQL via API Cloud Vercel...`);
             try {
@@ -441,7 +444,6 @@ client.on('message', async (msg) => {
             }
         }
 
-        // FIX SAKTI UTAMA: JIKA DIKETIK PESAN TEKS BEBAS LANGSUNG DI MENU UTAMA -> JALANKAN TEXT-TO-INFORMATION REALTIME DB
         if (text && text !== '1') {
             await msg.reply(`🔍 Mengekstrak konteks database online untuk Akun *${session.userRealName}*...`);
             try {
@@ -490,7 +492,7 @@ client.on('message', async (msg) => {
                 `   Nadi   : ${p.heart_rate || p.nadi || '-'}\n` +
                 `   Suhu   : ${p.temperature || p.suhu || '-'}\n` +
                 `   SpO2   : ${p.oxygen_saturation || p.spo2 || '-'}\n\n` +
-                `%🩺 *Keluhan:* ${p.keluhan_awal || p.raw_content || '-'}\n\n` +
+                `🩺 *Keluhan:* ${p.keluhan_awal || p.raw_content || '-'}\n\n` +
                 `Pilih aksi:\n` +
                 `*A* — 🤖 Ekstrak Analisis AI Medis\n` +
                 `*B* — 📝 Buat Ringkasan RME Kemenkes\n` +
