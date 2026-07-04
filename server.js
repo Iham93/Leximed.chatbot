@@ -8,6 +8,7 @@
 //          Distribusi Diagnosa, Analisis Otomatis Manajemen/Anomali)
 // FIX: 100% Real-time TTV Data Sync & Injeksi Parameter Dinamis Sesuai Pilihan Pasien
 // GUARDRAIL: Eliminasi Total Kata Kunci Spesifik Universitas Sesuai Regulasi Lomba
+// FIX BUG: Hanya merespons chat pribadi (Japri) dan mengisolasi target pengiriman nomor
 // ============================================================================
 
 const { Client, LocalAuth } = require('whatsapp-web.js');
@@ -47,7 +48,7 @@ const ROLES = {
         kode: 'dokter',
         nama: 'Dokter Spesialis',
         icon: '👨‍⚕️',
-        systemPrompt: `Kamu adalah Clinical Decision Support System (CDSS) LexiMed.ai. Analisis data klinis yang diberikan dokter, susun draf assessment medis dalam format SOAP (Subjective, Objective, Assessment, Plan), tentukan tingkat kegawatdaruratan (skala 1-5 ESI), and berikan rekomendasi tindakan medis. Dokter berhak menanyakan apa saja terkait pasien, data klinis, maupun pertanyaan umum kedokteran — jawab secara lengkap dan profesional.`
+        systemPrompt: `Kamu adalah Clinical Decision Support System (CDSS) LexiMed.ai. Analisis data klinis yang diberikan dokter, susun draf assessment medis dalam format SOAP (Subjective, Objective, Assessment, Plan), tentukan tingkat kegawatdaruratan (skala 1-5 ESI), and berikan recommendation tindakan medis. Dokter berhak menanyakan apa saja terkait pasien, data klinis, maupun pertanyaan umum kedokteran — jawab secara lengkap dan profesional.`
     },
     '2': {
         kode: 'perawat',
@@ -71,7 +72,7 @@ const ROLES = {
         kode: 'manajemen',
         nama: 'Manajemen Eksekutif',
         icon: '📊',
-        systemPrompt: `Kamu adalah AI Sistem Manajemen LexiMed.ai. Bantu analisis data operasional, laporan statistik pasien, efisiensi unit layanan, distribusi beban kerja dokter, deteksi anomali data, and berikan rekomendasi perbaikan berbasis data.`
+        systemPrompt: `Kamu adalah AI Sistem Manajemen LexiMed.ai. Bantu analisis data operasional, laporan statistik pasien, efisiensi unit layanan, distribusi beban kerja dokter, deteksi anomali data, and berikan recommendation perbaikan berbasis data.`
     },
     '6': {
         kode: 'admin',
@@ -525,18 +526,31 @@ client.on('ready', () => {
 // MAIN STREAM HANDLING MESSAGES
 // =============================================================
 client.on('message', async (msg) => {
-    const from    = msg.from;
+    const from = msg.from;
+
+    // 🛡️ STRICT ISOLATION GUARDRAIL: Hanya proses chat pribadi (Private Chat)
+    // Mengabaikan status broadcast dan pesan dari Group Chat agar tidak bocor/spammer ke nomor lain.
+    if (from === 'status@broadcast' || from.endsWith('@g.us')) {
+        return;
+    }
+
     const session = getSession(from);
     const text    = msg.body ? msg.body.trim() : '';
 
     try { const chat = await msg.getChat(); await chat.sendStateTyping(); } catch (_) {}
 
-    if (text === '#logout' || text === '#reset') { resetSession(from); return msg.reply(msgWelcome()); }
-    if (text === '#menu' && session.roleKode) { session.step = 'menu_utama'; return msg.reply(msgMenuRole(session)); }
+    if (text === '#logout' || text === '#reset') { 
+        resetSession(from); 
+        return client.sendMessage(from, msgWelcome()); 
+    }
+    if (text === '#menu' && session.roleKode) { 
+        session.step = 'menu_utama'; 
+        return client.sendMessage(from, msgMenuRole(session)); 
+    }
 
     // ── STEP 1: PILIH ROLE DI DASHBOARD AWAL ──────────────────
     if (session.step === 'welcome') {
-        if (!ROLES[text]) return msg.reply(msgWelcome());
+        if (!ROLES[text]) return client.sendMessage(from, msgWelcome());
         session.selectedRoleKey = text;
         session.step = 'auth_username';
 
@@ -544,7 +558,7 @@ client.on('message', async (msg) => {
         if (ROLES[text].kode === 'asisten') exampleUser = "ilham_asisten";
         if (ROLES[text].kode === 'admin') exampleUser = "admin_darsi";
 
-        return msg.reply(
+        return client.sendMessage(from, 
             `🔐 *GERBANG OTORISASI PERAN: ${ROLES[text].nama.toUpperCase()}*\n` +
             `${'─'.repeat(30)}\n\n` +
             `Untuk menjaga keamanan rekam medis elektronik, silakan ketik *USERNAME* akun Anda:\n\n` +
@@ -555,11 +569,11 @@ client.on('message', async (msg) => {
 
     // ── STEP 2: VERIFIKASI USERNAME ──────────────────────────
     if (session.step === 'auth_username') {
-        if (!text) return msg.reply(`Username tidak boleh kosong.`);
+        if (!text) return client.sendMessage(from, `Username tidak boleh kosong.`);
 
         if (text.toLowerCase() === 'kembali' || text === '#menu' || text === '#reset') {
             resetSession(from);
-            return msg.reply(msgWelcome());
+            return client.sendMessage(from, msgWelcome());
         }
 
         session.username = text;
@@ -567,7 +581,7 @@ client.on('message', async (msg) => {
         session.captchaAttempts = 0;
         generateCaptchaWA(session);
 
-        return msg.reply(
+        return client.sendMessage(from, 
             `🔑 Username tersimpan: *${text}*\n\n` +
             msgCaptchaChallenge(session)
         );
@@ -577,21 +591,21 @@ client.on('message', async (msg) => {
     if (session.step === 'auth_captcha') {
         if (text.toLowerCase() === 'kembali') {
             session.step = 'auth_username';
-            return msg.reply(`🔙 Berhasil kembali ke langkah sebelumnya.\n\nSilakan ketik kembali *USERNAME* Anda:`);
+            return client.sendMessage(from, `🔙 Berhasil kembali ke langkah sebelumnya.\n\nSilakan ketik kembali *USERNAME* Anda:`);
         }
 
         const jawaban = parseInt(text, 10);
         if (isNaN(jawaban) || jawaban !== session.captcha.result) {
             session.captchaAttempts = (session.captchaAttempts || 0) + 1;
             generateCaptchaWA(session);
-            return msg.reply(
+            return client.sendMessage(from, 
                 `❌ Jawaban captcha salah. Silakan coba lagi dengan soal baru:\n\n` +
                 msgCaptchaChallenge(session)
             );
         }
 
         session.step = 'auth_password';
-        return msg.reply(
+        return client.sendMessage(from, 
             `✅ Captcha terverifikasi.\n\n` +
             `🔑 Silakan ketik *KATA SANDI / PASSWORD* akun Anda:\n\n` +
             `👉 Ketik *kembali* jika ingin mengubah atau memperbaiki username Anda.`
@@ -602,10 +616,10 @@ client.on('message', async (msg) => {
     if (session.step === 'auth_password') {
         if (text.toLowerCase() === 'kembali') {
             session.step = 'auth_username';
-            return msg.reply(`🔙 Berhasil kembali ke langkah sebelumnya.\n\nSilakan ketik kembali *USERNAME* Anda yang benar:`);
+            return client.sendMessage(from, `🔙 Berhasil kembali ke langkah sebelumnya.\n\nSilakan ketik kembali *USERNAME* Anda yang benar:`);
         }
 
-        await msg.reply(`⏳ Menghubungkan kredensial ke database faskes terpadu (PostgreSQL Cloud)...`);
+        await client.sendMessage(from, `⏳ Menghubungkan kredensial ke database faskes terpadu (PostgreSQL Cloud)...`);
         try {
             const form = new FormData();
             form.append('username', session.username);
@@ -619,7 +633,7 @@ client.on('message', async (msg) => {
             const data = res.data;
             if (data.success === false || !data.user) {
                 session.step = 'auth_username';
-                return msg.reply(`❌ Verifikasi Gagal: Kata sandi atau Username salah.\n\nSilakan ketik ulang *USERNAME* Anda:`);
+                return client.sendMessage(from, `❌ Verifikasi Gagal: Kata sandi atau Username salah.\n\nSilakan ketik ulang *USERNAME* Anda:`);
             }
 
             let fetchedRole = data.user.role ? data.user.role.toLowerCase() : '';
@@ -629,7 +643,7 @@ client.on('message', async (msg) => {
 
             if (fetchedRole !== expectedRole) {
                 session.step = 'auth_username';
-                return msg.reply(
+                return client.sendMessage(from, 
                     `❌ Akses Ditolak!\n` +
                     `Akun ini di database terdaftar sebagai *${fetchedRole.toUpperCase()}*, ` +
                     `bukan *${expectedRole.toUpperCase()}* yang Anda pilih di menu awal.\n\n` +
@@ -644,12 +658,12 @@ client.on('message', async (msg) => {
             session.userSpecialization = data.user.specialization || 'Umum';
             session.step               = 'menu_utama';
 
-            return msg.reply(msgMenuRole(session) + appendWebLinkFooter());
+            return client.sendMessage(from, msgMenuRole(session) + appendWebLinkFooter());
 
         } catch (err) {
             console.error('[API AUTH CORRUPTION]:', err.message);
             session.step = 'auth_username';
-            return msg.reply(`❌ Verifikasi Gagal: Gagal sinkronisasi data kredensial.\n\nPastikan format teks besar/kecil sesuai dan web backend merespon.\n\nKetik kembali *USERNAME* Anda:`);
+            return client.sendMessage(from, `❌ Verifikasi Gagal: Gagal sinkronisasi data kredensial.\n\nPastikan format teks besar/kecil sesuai dan web backend merespon.\n\nKetik kembali *USERNAME* Anda:`);
         }
     }
 
@@ -659,16 +673,16 @@ client.on('message', async (msg) => {
 
         // LOGIKA PENERIMA VOICE NOTE DI MENU UTAMA
         if (msg.type === 'ptt' || msg.type === 'audio') {
-            await msg.reply(`🎙️ Membuka dokumen pesan suara via Groq Whisper v3...`);
+            await client.sendMessage(from, `🎙️ Membuka dokumen pesan suara via Groq Whisper v3...`);
             try {
                 const media     = await msg.downloadMedia();
                 const transkrip = await transkripVoice(media.data, media.mimetype);
-                await msg.reply(`📝 *Hasil Transkripsi Suara:* "${transkrip}"\n\nMencari relasi data klinis...`);
+                await client.sendMessage(from, `📝 *Hasil Transkripsi Suara:* "${transkrip}"\n\nMencari relasi data klinis...`);
 
                 // Cek dulu apakah hasil transkripsi cocok dengan quick-stats
                 const quickHasil = await cekInterseptorCepat(transkrip.toLowerCase(), session);
                 if (quickHasil) {
-                    return msg.reply(`🤖 *RESPONS INSTAN AGENT (VOICE — QUICK-STATS)*\n${'─'.repeat(30)}\n\n${quickHasil}\n\n${'─'.repeat(30)}` + appendWebLinkFooter());
+                    return client.sendMessage(from, `🤖 *RESPONS INSTAN AGENT (VOICE — QUICK-STATS)*\n${'─'.repeat(30)}\n\n${quickHasil}\n\n${'─'.repeat(30)}` + appendWebLinkFooter());
                 }
 
                 const targetZoneDate = new Date(new Date().toLocaleString("en-US", {timeZone: "Asia/Jakarta"}));
@@ -680,36 +694,36 @@ client.on('message', async (msg) => {
                 const dbContext = await fetchSupabaseDataRows(session);
                 const combinedPrompt = `USER REALNAME: ${session.userRealName}\nUNIT: ${session.userUnit}\nROLE: ${targetRoleConfig.nama}\nTANGGAL HARI INI SECARA REAL-TIME: ${dynamicTodayString}\n\nDATA PASIEN AKTIF SUPABASE:\n${dbContext}\n\nJawab transkripsi suara user secara terstruktur polos tanpa simbol markdown. Perhatikan batasan tanggal hari ini secara ketat.`;
                 const aiRes = await tanyaAI(combinedPrompt, transkrip);
-                return msg.reply(`🤖 *RESPONS INSTAN AGENT (VOICE — LIVE CLOUD)*\n${'─'.repeat(30)}\n\n${aiRes}\n\n${'─'.repeat(30)}` + appendWebLinkFooter());
+                return client.sendMessage(from, `🤖 *RESPONS INSTAN AGENT (VOICE — LIVE CLOUD)*\n${'─'.repeat(30)}\n\n${aiRes}\n\n${'─'.repeat(30)}` + appendWebLinkFooter());
             } catch (err) {
-                return msg.reply(`⚠️ Gagal mengenali enkripsi audio: ${err.message}`);
+                return client.sendMessage(from, `⚠️ Gagal mengenali enkripsi audio: ${err.message}`);
             }
         }
 
         if (msg.type === 'image') {
             if (session.roleKode === 'radiologi') return handleGambar(msg, session);
-            return msg.reply(`🖼️ Fitur ekstraksi Vision dikunci untuk selain tim Radiologi.`);
+            return client.sendMessage(from, `🖼️ Fitur ekstraksi Vision dikunci untuk selain tim Radiologi.`);
         }
 
         // MENU "1" — KHUSUS MANAJEMEN: LANGSUNG ANALISIS OTOMATIS
         if (text === '1' && session.roleKode === 'manajemen') {
-            await msg.reply(`⏳ Menjalankan analisis otomatis menyeluruh data Supabase...`);
+            await client.sendMessage(from, `⏳ Menjalankan analisis otomatis menyeluruh data Supabase...`);
             try {
                 const patients = await fetchPatientsRaw(session);
                 const hasil = buildAnalisisOtomatisManajemen(patients);
-                return msg.reply(`${hasil}\n\n${'─'.repeat(30)}` + appendWebLinkFooter() + `\n\nKetik *#menu* untuk kembali.`);
+                return client.sendMessage(from, `${hasil}\n\n${'─'.repeat(30)}` + appendWebLinkFooter() + `\n\nKetik *#menu* untuk kembali.`);
             } catch (err) {
-                return msg.reply(`❌ Gagal menjalankan analisis otomatis: ${err.message}`);
+                return client.sendMessage(from, `❌ Gagal menjalankan analisis otomatis: ${err.message}`);
             }
         }
 
         if (text === '1' && session.roleKode !== 'manajemen') {
-            await msg.reply(`⏳ Menarik data pasien riil dari PostgreSQL via API Cloud Vercel...`);
+            await client.sendMessage(from, `⏳ Menarik data pasien riil dari PostgreSQL via API Cloud Vercel...`);
             try {
                 const patients = await fetchPatientsRaw(session);
 
                 if (patients.length === 0) {
-                    return msg.reply(`⚠️ Koneksi berhasil, namun data tabel pasien kosong.\n\nKetik *#menu* untuk kembali.`);
+                    return client.sendMessage(from, `⚠️ Koneksi berhasil, namun data tabel pasien kosong.\n\nKetik *#menu* untuk kembali.`);
                 }
 
                 session.fetchedPatients = patients;
@@ -731,10 +745,10 @@ client.on('message', async (msg) => {
                     txt += `   Diagnosa Keluhan: ${keluhanNorm}\n\n`;
                 });
                 txt += `Ketik nomor urutan pasien untuk detail rekam medis:`;
-                return msg.reply(txt);
+                return client.sendMessage(from, txt);
 
             } catch (err) {
-                return msg.reply(`❌ Jalur API Cloud Vercel terputus. Pastikan deployment aktif.`);
+                return client.sendMessage(from, `❌ Jalur API Cloud Vercel terputus. Pastikan deployment aktif.`);
             }
         }
 
@@ -743,17 +757,16 @@ client.on('message', async (msg) => {
             const lowerText = text.toLowerCase();
 
             // 🛡️ INTERSEPTOR QUICK-STATS (disinkronkan dari KelolaAgent.jsx)
-            // Dicek lebih dulu sebelum membebani Groq AI, demi respons instan & akurat 100% data riil.
             try {
                 const quickHasil = await cekInterseptorCepat(lowerText, session);
                 if (quickHasil) {
-                    return msg.reply(
+                    return client.sendMessage(from, 
                         `${quickHasil}\n\n${'─'.repeat(30)}` + appendWebLinkFooter() + `\n\nKetik *#menu* untuk kembali.`
                     );
                 }
             } catch (_) { /* lanjut ke fallback AI jika quick-stats gagal */ }
 
-            await msg.reply(`🔍 Mengekstrak konteks database online untuk Akun *${session.userRealName}*...`);
+            await client.sendMessage(from, `🔍 Mengekstrak konteks database online untuk Akun *${session.userRealName}*...`);
             try {
                 const dbContext = await fetchSupabaseDataRows(session);
 
@@ -775,13 +788,13 @@ client.on('message', async (msg) => {
                     `3. Hasilkan keluaran teks polos terstruktur tanpa markdown bintang ganda atau tagar.`;
 
                 const hasil = await tanyaAI(augmentedPrompt, text);
-                return msg.reply(
+                return client.sendMessage(from, 
                     `🤖 *RESPONS INSTAN AGENT (${session.roleKode.toUpperCase()} — LIVE CLOUD)*\n` +
                     `${'─'.repeat(30)}\n\n${hasil}\n\n${'─'.repeat(30)}` +
                     appendWebLinkFooter()
                 );
             } catch (e) {
-                return msg.reply(msgFallback(text));
+                return client.sendMessage(from, msgFallback(text));
             }
         }
     }
@@ -796,7 +809,7 @@ client.on('message', async (msg) => {
 
             const keluhanNorm = normalisasiKeluhan(p);
 
-            return msg.reply(
+            return client.sendMessage(from, 
                 `📁 *REKAM MEDIS PASIEN — ${p.title || 'Tn'}. ${p.name}*\n${'─'.repeat(32)}\n` +
                 `RM   : ${p.no_rm || p.id}\n` +
                 `Nama    : ${p.name}\n` +
@@ -816,17 +829,17 @@ client.on('message', async (msg) => {
                 `*C* — 🔙 Kembali ke dashboard`
             );
         }
-        return msg.reply(`⚠️ Indeks salah. Pilih nomor 1 sampai ${session.fetchedPatients.length}.`);
+        return client.sendMessage(from, `⚠️ Indeks salah. Pilih nomor 1 sampai ${session.fetchedPatients.length}.`);
     }
 
     // ── STEP 6: PROSES DATA KLINIS & PUSH KE LIVE CLINICAL_DATA DB ──
     if (session.step === 'aksi_pasien') {
         const p = session.selectedPatient;
         const targetRoleConfig = ROLES[session.selectedRoleKey];
-        if (!p) { session.step = 'menu_utama'; return msg.reply(msgMenuRole(session)); }
+        if (!p) { session.step = 'menu_utama'; return client.sendMessage(from, msgMenuRole(session)); }
 
         if (text.toLowerCase() === 'a') {
-            await msg.reply(`⏳ Menghubungkan klaster AI untuk mengekstrak draf rekam medis...`);
+            await client.sendMessage(from, `⏳ Menghubungkan klaster AI untuk mengekstrak draf rekam medis...`);
             const konteks = buildKonteksKlinis(p);
             try {
                 const aiResult = await tanyaAI(targetRoleConfig.systemPrompt, konteks);
@@ -848,68 +861,69 @@ client.on('message', async (msg) => {
                 await axios.post(`${LARAVEL_API}/clinical-data`, payload, { headers, timeout: 10000 });
 
                 session.step = 'menu_utama';
-                return msg.reply(
+                return client.sendMessage(from, 
                     `🤖 *ANALISIS AI PASIEN — ${p.name}*\n` +
                     `${'─'.repeat(32)}\n\n${aiResult}\n\n${'─'.repeat(32)}\n\n` +
                     `✅ [POSTGRESQL SYNCED] Sukses menyisipkan berkas menuju tabel clinical_data!` +
                     appendWebLinkFooter() + `\n\nKetik *#menu* untuk kembali.`
                 );
             } catch (e) {
-                return msg.reply(msgFallback(konteks));
+                return client.sendMessage(from, msgFallback(konteks));
             }
         }
 
         if (text.toLowerCase() === 'b') {
-            await msg.reply(`📝 Menyusun resume medis standar regulasi SatuSehat...`);
+            await client.sendMessage(from, `📝 Menyusun resume medis standar regulasi SatuSehat...`);
             const prompt = `Susun resume medis formal berpatokan pada regulasi SatuSehat RME Kemenkes RI berdasarkan data riil database berikut:\n\n` + buildKonteksKlinis(p);
             try {
                 const hasil = await tanyaAI(targetRoleConfig.systemPrompt, prompt);
                 session.step = 'menu_utama';
-                return msg.reply(
+                return client.sendMessage(from, 
                     `📋 *RESUME ELEKTRONIK REKAM MEDIS (RME)*\n` +
                     `${p.name} — ${p.no_rm || p.id}\n` +
                     `${'─'.repeat(32)}\n\n${hasil}\n\n${'─'.repeat(32)}` +
                     appendWebLinkFooter() + `\n\nKetik *#menu* untuk kembali.`
                 );
             } catch (e) {
-                return msg.reply(`❌ Gagal merangkum resume: ${e.message}`);
+                return client.sendMessage(from, `❌ Gagal merangkum resume: ${e.message}`);
             }
         }
 
         if (text.toLowerCase() === 'c') {
             session.step = 'menu_utama';
-            return msg.reply(msgMenuRole(session));
+            return client.sendMessage(from, msgMenuRole(session));
         }
-        return msg.reply(`Ketik opsi A, B, atau C.`);
+        return client.sendMessage(from, `Ketik opsi A, B, atau C.`);
     }
 
     // ── STEP: TUNGGU LAMPIRAN CITRA RADIOLOGI ────────────────
     if (session.step === 'tunggu_gambar') {
         if (msg.type === 'image') return handleGambar(msg, session);
-        return msg.reply(`Silakan lampirkan gambar radiologi atau ketik *#menu*.`);
+        return client.sendMessage(from, `Silakan lampirkan gambar radiologi atau ketik *#menu*.`);
     }
 
-    msg.reply(msgWelcome());
+    client.sendMessage(from, msgWelcome());
 });
 
 // =============================================================
 // SUB-ROUTINE HANDLER: VISUAL IMAGING LLAMA VISION EXTRACTOR
 // =============================================================
 async function handleGambar(msg, session) {
-    await msg.reply(`🩻 Citra rontgen diterima. Memproses analisis multimodal...`);
+    const from = msg.from;
+    await client.sendMessage(from, `🩻 Citra rontgen diterima. Memproses analisis multimodal...`);
     try {
         const media   = await msg.downloadMedia();
         const targetRoleConfig = ROLES[session.selectedRoleKey];
         const hasil   = await analisisGambar(media.data, media.mimetype, targetRoleConfig.systemPrompt);
 
-        return msg.reply(
+        return client.sendMessage(from, 
             `🩻 *DRAF LAPORAN EVALUASI RADIOLOGI AI*\n` +
             `${'─'.repeat(30)}\n\n${hasil}\n\n${'─'.repeat(30)}\n` +
             `⚠️ *PERINGATAN*: Hasil interpretasi ini wajib divalidasi ulang oleh spesialis Dokter Sp.Rad.` +
             appendWebLinkFooter() + `\n\nKetik *#menu* untuk kembali.`
         );
     } catch (e) {
-        return msg.reply(`⚠️ Gagal membedah berkas citra: ${e.message}`);
+        return client.sendMessage(from, `⚠️ Gagal membedah berkas citra: ${e.message}`);
     }
 }
 
